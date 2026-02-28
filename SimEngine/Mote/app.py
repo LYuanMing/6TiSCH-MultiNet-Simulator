@@ -96,8 +96,8 @@ class AppBase(object):
             u'app': {
                 u'appcounter':    self.appcounter,
                 u'timestamp':     self.engine.getAsn()
-            }
-
+            },
+            u'pkt_len': packet_length
         }
 
         # update appcounter

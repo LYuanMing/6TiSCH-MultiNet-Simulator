@@ -246,7 +246,7 @@ class Sixlowpan(object):
 
         assert u'type' in rxPacket
         assert u'net' in rxPacket
-
+        assert u'pkt_len' in rxPacket, rxPacket
         goOn = True
 
         if (
@@ -272,6 +272,9 @@ class Sixlowpan(object):
                 fwdPacket[u'app']  = copy.deepcopy(rxPacket[u'app'])
             # net
             fwdPacket[u'net']      = copy.deepcopy(rxPacket[u'net'])
+            # pkt_len
+            fwdPacket[u'pkt_len']  = rxPacket[u'pkt_len']
+
             if 'hop_limit' in fwdPacket[u'net']:
                 assert fwdPacket[u'net'][u'hop_limit'] > 1
                 fwdPacket[u'net'][u'hop_limit'] -= 1
@@ -507,8 +510,10 @@ class Fragmentation(object):
                     ):
                     # slop is in the first fragment
                     fragment[u'net'][u'packet_length'] = packet[u'net'][u'packet_length'] % self.settings.tsch_max_payload_len
+                    fragment[u'pkt_len'] = fragment[u'net'][u'packet_length'] # TODO: replace packet_length with pkt_len
                 else:
                     fragment[u'net'][u'packet_length'] = self.settings.tsch_max_payload_len
+                    fragment[u'pkt_len'] = fragment[u'net'][u'packet_length']
 
                 # update datagram_offset which will be used for the next fragment
                 datagram_offset += fragment[u'net'][u'packet_length']
@@ -604,7 +609,7 @@ class Fragmentation(object):
         packet[u'type'] = fragment[u'net'][u'original_packet_type']
         packet[u'net'] = copy.deepcopy(self.reassembly_buffers[srcMac][incoming_datagram_tag][u'net'])
         packet[u'net'][u'packet_length'] = datagram_size
-
+        packet[u'pkt_len'] = datagram_size
         # reassembly is done, delete buffer
         del self.reassembly_buffers[srcMac][incoming_datagram_tag]
         if len(self.reassembly_buffers[srcMac]) == 0:
@@ -753,7 +758,8 @@ class FragmentForwarding(Fragmentation):
                     u'mac': {
                         u'srcMac': self.mote.get_mac_addr(),
                         u'dstMac': self.vrb_table[srcMac][incoming_datagram_tag][u'dstMac']
-                    }
+                    },
+                    u'pkt_len': packet_length
                 }
 
                 # forwarding fragment should have the outgoing datagram_tag

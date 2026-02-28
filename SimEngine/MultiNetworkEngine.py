@@ -435,6 +435,14 @@ class MultiNetworkSimEngine(DiscreteEventEngine):
         network_id = self.default_network_id
         return self._get_current_network_asn(network_id)
 
+    def getSlotStartTime(self, network_id:str=None):
+        if network_id is None:
+            raise Warning("network id is None when calling getSlotStartTime, so default network id is used")
+            network_id = self.default_network_id
+        network = self._get_network(network_id)
+        current_asn = int(old_div((self.global_time - network.start_time), self.settings.tsch_slotDuration))
+        return current_asn * self.settings.tsch_slotDuration
+
 
     def asn_to_global_time(self, asn, network_id:str):
         """convert ASN in a specific network to global time in the engine"""
@@ -450,6 +458,7 @@ class MultiNetworkSimEngine(DiscreteEventEngine):
     def scheduleAtAsn(self, asn, cb, uniqueTag, intraSlotOrder, network_id:str = None):
         """schedule an event at a particular ASN in the future"""
         if network_id is None:
+            # raise Warning("network id is None when calling getSlotStartTime, so default network id is used")
             assert self.default_network_id is not None, "Default network ID is not set."
             network_id = self.default_network_id
         event_time = self.asn_to_global_time(asn, network_id)

@@ -196,8 +196,9 @@ class Mote(object):
 
         # remove all the element of packet so it cannot be processed further
         # Note: this is useless, but allows us to catch bugs in case packet is further processed
-        for k in list(packet.keys()):
-            del packet[k]
+        del packet
+        # for k in list(packet.keys()):
+        #     del packet[k]
 
     #======================== private =========================================
 

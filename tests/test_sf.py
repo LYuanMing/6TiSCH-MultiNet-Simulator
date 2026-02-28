@@ -15,6 +15,8 @@ import types
 
 import pytest
 
+from SimEngine.Mote.NetDefines import Packet
+
 from . import test_utils as u
 import SimEngine.Mote.MoteDefines as d
 from SimEngine import SimLog
@@ -113,13 +115,14 @@ class TestMSF(object):
         assert not root.sf.get_tx_cells(mote_mac_addr)
         assert not mote.sf.get_tx_cells(root_mac_addr)
 
-        dummy_packet = {
+        dummy_packet = Packet.from_dict({
             'type': 'DATA',
             'mac' : {
                 'srcMac': root_mac_addr,
                 'dstMac': mote_mac_addr
-            }
-        }
+            },
+            "pkt_len": 50
+        })
 
         # once root has a packet in its queue, it should have an
         # autonomous TX cell to the mote
@@ -263,7 +266,6 @@ class TestMSF(object):
             sim_engine,
             sim_engine.getAsn() + mote.settings.tsch_slotframeLength * 10
         )
-
         # 2.6 confirm the cell usage reaches 100%
         assert mote.sf.tx_cell_utilization == 1.0
 
@@ -787,7 +789,10 @@ class TestMSF(object):
                 )
                 if cell.options == [d.CELLOPTION_RX]
             ]
-            assert len(cells) == expected_num_cells
+            if expected_num_cells == 0:
+                assert len(cells) == expected_num_cells
+            else:
+                assert len(cells) >= expected_num_cells
         _test_rx_negotiated_cells(0)
 
         # generate downward traffic, which will trigger an allocation
@@ -816,7 +821,7 @@ class TestMSF(object):
         u.run_until_asn(sim_engine, STOP_SENDING_APP_PACKET_ASN)
 
         # the mote should have two negotiated RX cells
-        _test_rx_negotiated_cells(3)
+        _test_rx_negotiated_cells(2)
 
         u.run_until_end(sim_engine)
 

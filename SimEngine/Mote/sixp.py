@@ -14,6 +14,8 @@ from builtins import object
 import copy
 import random
 
+from SimEngine.Mote.NetDefines import Packet
+
 # Mote sub-modules
 from . import MoteDefines as d
 
@@ -473,7 +475,7 @@ class SixP(object):
             maxNumCells        = None,
             payload            = None
         ):
-        packet = {
+        packet = Packet.from_dict({
             u'type'       : d.PKT_TYPE_SIXP,
             u'mac': {
                 u'srcMac' : self.mote.get_mac_addr(),
@@ -483,8 +485,9 @@ class SixP(object):
                 u'msgType': msgType,
                 u'code'   : code,
                 u'seqNum' : None
-            }
-        }
+            },
+            u'pkt_len': d.PKT_LEN_SIXP
+        })
 
         if   msgType == d.SIXP_MSG_TYPE_REQUEST:
             # put the next SeqNum

@@ -75,7 +75,7 @@ def collect_setting_keys_in_use():
     settings_variables = set([])
     setting_keys = set([])
     for file_path in core_files:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             for line in f:
                 # remote all the white spaces and the new line character
                 line = line.rstrip()

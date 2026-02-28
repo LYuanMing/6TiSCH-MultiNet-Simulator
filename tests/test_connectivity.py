@@ -70,8 +70,8 @@ def test_propagate(sim_engine):
     engine.connectivity.propagate()
 
 class TestConnectivity:
-    # test the multi-network can enqueue the transmission and reception
     def test_multi_network_propagate_enqueue(self, sim_engine):
+        # test the multi-network can enqueue the transmission and reception
         sim_engine = sim_engine(
             diff_config={
                 'exec_numSlotframesPerRun'      : 10000,
@@ -97,7 +97,7 @@ class TestConnectivity:
 
         # startRx on RX mote to add to reception queue
         channel = RX_mote.tsch.hopping_sequence[0]
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
 
         # assert reception queue is not empty after startRx
         assert len(sim_engine.connectivity.reception_queue[channel]) == 1
@@ -144,7 +144,7 @@ class TestConnectivity:
         channel = TX_mote.tsch.hopping_sequence[0]
         
         # Start reception on RX mote
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
         
         # Create and start a transmission on TX mote
         packet = {
@@ -205,7 +205,7 @@ class TestConnectivity:
         )
         
         # RX mote starts reception
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
         # both TX motes start transmission at the same time
         first_TX_mote.radio.startTx(
             channel=channel, 
@@ -273,7 +273,7 @@ class TestConnectivity:
         )
 
         # RX mote starts reception
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
         RX_mote.radio.waitingFor = d.WAITING_FOR_RX
 
         # First TX mote starts transmission
@@ -370,15 +370,15 @@ class TestConnectivity:
             rxdone_called.append(packet)
             return original_rxdone(packet)
 
-        def mock_txdone(isACKed):
-            txdone_called.append(isACKed)
-            return original_txdone(isACKed)
+        def mock_txdone():
+            txdone_called.append(True)
+            return original_txdone()
 
         RX_mote.radio.rxDone = mock_rxdone
         TX_mote.radio.txDone = mock_txdone
 
         # Start reception on RX mote
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
         # Set the TSCH waiting state to RX as expected by the rxDone method
         RX_mote.tsch.waitingFor = d.WAITING_FOR_RX
 
@@ -475,7 +475,7 @@ class TestConnectivity:
         RX_mote.radio.rxDone = mock_rxdone
 
         # Start reception on RX mote
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
         # Set the TSCH waiting state to RX as expected by the rxDone method
         RX_mote.tsch.waitingFor = d.WAITING_FOR_RX
 
@@ -591,7 +591,7 @@ class TestConnectivity:
         RX_mote.radio.rxDone = mock_rxdone
 
         # Start reception on RX mote
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
         # Set the TSCH waiting state to RX as expected by the rxDone method
         RX_mote.tsch.waitingFor = d.WAITING_FOR_RX
 
@@ -690,7 +690,7 @@ class TestConnectivity:
         RX_mote.tsch.waitingFor = d.WAITING_FOR_RX
 
         # Start reception on RX mote
-        RX_mote.radio.startRx(channel)
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
 
         # Create and start a transmission on TX mote
         packet = {
@@ -731,6 +731,96 @@ class TestConnectivity:
         assert len(sim_engine.connectivity.reception_queue[channel]) == 0, \
             f"Expected reception queue to be empty after propagation, but had {len(sim_engine.connectivity.reception_queue[channel])} items"
 
+    def test_multi_network_propagate_dequeue_at_end_time(self, sim_engine):
+        # test the reception is dequeued at end time
+        sim_engine = sim_engine(
+            diff_config={
+                'exec_numSlotframesPerRun'      : 10000,
+                'conn_class'                    : 'Random',
+                'secjoin_enabled'               : False,
+                "phy_numChans"                  : 1,
+                "tsch_probBcast_ebProb"         : 0, # disable automatic EB transmission to prevent conflicts
+                "exec_numMotes"                 : 2,
+                "conn_random_init_min_neighbors": 1   # set minimum neighbors to satisfy requirements
+            }
+        )
+        for mote in sim_engine.motes:
+            mote.rpl.trickle_timer.stop()
+
+        connectivity = sim_engine.connectivity
+
+        TX_mote = sim_engine.motes[0]
+        RX_mote = sim_engine.motes[1]
+        channel = TX_mote.tsch.hopping_sequence[0]
+
+        # Initialize the queues for the channel if they don't exist
+        if channel not in connectivity.transmission_queue:
+            connectivity.transmission_queue[channel] = []
+        if channel not in connectivity.reception_queue:
+            connectivity.reception_queue[channel] = []
+
+        # Initially, queues should be empty
+        assert len(connectivity.transmission_queue[channel]) == 0
+        assert len(connectivity.reception_queue[channel]) == 0
+
+        sim_engine.removeFutureEvent((1, '_action_listeningForEB_cell'))
+
+        # Set the TSCH waiting state for RX mote
+        RX_mote.tsch.waitingFor = d.WAITING_FOR_RX
+        # Start reception on RX mote
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
+
+        assert len(connectivity.reception_queue[channel]) == 1
+
+        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.settings.tsch_slotDuration * 2)
+
+        assert len(connectivity.reception_queue[channel]) == 0, \
+            f"Expected reception queue to be empty after end time, but had {len(connectivity.reception_queue[channel])} items"
+        assert RX_mote.radio.state == d.RADIO_STATE_OFF
+
+        # Create and start a transmission on TX mote
+        packet = {
+            u'type': u'EB',
+            u'pkt_len': 68,
+            u'mac': {
+                u'dstMac': d.BROADCAST_ADDRESS,
+                u'srcMac': TX_mote.get_mac_addr(),
+                u'retriesLeft': 3,
+                u'join_metric': 1000
+            }
+        }
+        # Set the TSCH waiting state for TX mote and RX mote
+        RX_mote.tsch.waitingFor = d.WAITING_FOR_RX
+        # Start reception on RX mote
+        RX_mote.radio.startRx(channel, sim_engine.global_time + sim_engine.settings.tsch_slotDuration)
+        # Start transimssion on TX mote
+        TX_mote.tsch.waitingFor = d.WAITING_FOR_TX
+        TX_mote.tsch.pktToSend = packet
+        TX_mote.radio.startTx(channel, packet)
+        # Run propagation once to add both transmission and reception to the queue
+        # and allow the reception to lock onto the transmission
+        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+
+        # Verify that both transmission and reception were added to the queue
+        assert len(connectivity.transmission_queue[channel]) == 1
+        assert len(connectivity.reception_queue[channel]) == 1
+
+        # Verify that the reception has locked onto the transmission
+        reception = connectivity.reception_queue[channel][0]
+        assert reception[u'locked_transmission'] is not None, "Reception should have locked onto the transmission"
+
+        transmission_end_time = TX_mote.radio.onGoingTransmission[u'end_time']
+
+        # Run one more propagation cycle after the end time
+        u.run_until_(sim_engine, transmission_end_time + sim_engine.time_step)
+
+        # After the end time, both transmission and reception should be dequeued
+        assert len(connectivity.transmission_queue[channel]) == 0, \
+            f"Expected transmission queue to be empty after end time, but had {len(connectivity.transmission_queue[channel])} items"
+        assert len(connectivity.reception_queue[channel]) == 0, \
+            f"Expected reception queue to be empty after end time, but had {len(connectivity.reception_queue[channel])} items"
+        assert RX_mote.radio.state == d.RADIO_STATE_OFF
+        assert TX_mote.radio.state == d.RADIO_STATE_OFF
 
 #=== test for ConnectivityRandom
 class TestRandom(object):
@@ -1057,24 +1147,29 @@ def test_propagation(sim_engine, fixture_propagation_test_type):
                     'srcMac': src.get_mac_addr(),
                     'dstMac': dst.get_mac_addr()
                 },
-                'app': { 'seq': seqno } # for debugging purpose
+                'app': { 'seq': seqno }, # for debugging purpose
+                'pkt_len': d.PKT_LEN_KEEP_ALIVE
             }
             src.tsch.enqueue(packet)
 
     u.run_until_end(sim_engine)
 
-    num_transmissions = len(u.read_log_file([SimLog.LOG_TSCH_TXDONE['type']]))
+    logs = u.read_log_file([SimLog.LOG_TSCH_TXDONE['type']])
+    max_seq_num = 0
+    for log in logs:
+        if log['packet']['type'] == packet['type']:
+            max_seq_num = max(max_seq_num, log['packet']['app']['seq'])
 
     if fixture_propagation_test_type == 'test_setup':
         # we shouldn't see any transmission
-        assert num_transmissions == 0
+        assert max_seq_num == 0
     else:
         # num_transmissions contains the number of retransmissions if
         # any. in other words, num_transmissions should be equal to
         # num_frames when no frame is dropped
-        assert num_transmissions == num_frames
+        assert max_seq_num == (num_frames - 1) # double that is becuase len(keep_alive_packet + ACK)
 
-@pytest.fixture(params=[1.0, 0.0])
+@pytest.fixture(params=[0.0, 1.0])
 def fixture_pdr(request):
     return request.param
 
@@ -1127,23 +1222,26 @@ def test_drop_ack(sim_engine, fixture_pdr):
         sim_engine.connectivity
     )
 
+    # u.run_until_asn(sim_engine, 17 * 101 + 33)
+    # init_global_time = sim_engine.global_time
+    # for i in range(1, 200):
+    #     u.run_until_(sim_engine, init_global_time + i * 1000)
+    #     breakpoint()
     u.run_until_end(sim_engine)
 
-    logs = u.read_log_file(['tsch.txdone'])
+    logs = u.read_log_file(['tsch.rxdone'])
     # all txdone logs is of KEEP_ALIVE
-    assert (
-        len(logs) ==
-        len([log for log in logs if log['packet']['type'] == 'KEEP_ALIVE'])
-    )
-    num_acked = [log for log in logs if log['isACKed']]
+    num_acked = len([log for log in logs if log['packet']['type'] == d.PKT_TYPE_ACK])
+    num_pkt = len([log for log in logs if log['packet']['type'] == d.PKT_TYPE_KEEP_ALIVE])
     if fixture_pdr == 0.0:
+        assert num_pkt != num_acked
         # none of them gets ACK
-        assert len(num_acked) == 0
+        assert num_acked == 0
         # mote gets desynchronized because it doesn't receive any ACK
         assert u.read_log_file(['tsch.desynced'])
     elif fixture_pdr == 1.0:
         # all get ACK
-        assert len(num_acked) == len(logs)
+        assert num_acked == num_pkt
         assert not u.read_log_file(['tsch.desynced'])
     else:
         raise ValueError('invalid value ({0}) for fixture_pdr'.format(

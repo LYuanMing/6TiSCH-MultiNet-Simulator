@@ -71,18 +71,21 @@ class Radio(object):
 
     # TX
 
-    def startTx(self, channel, packet):
+    def startTx(self, channel, packet, start_time=None):
 
         assert self.onGoingTransmission is None
         assert u'type' in packet
         assert u'mac'  in packet
 
+        if start_time is None:
+            start_time = self.engine.global_time + self.mote.tsch.clock.get_drift()
+
+        assert start_time >= self.engine.global_time
+
         # record the state of the radio
         self.state   = d.RADIO_STATE_TX
         self.channel = channel
-
         # record ongoing, for propagation model
-        start_time = self.engine.global_time + self.mote.tsch.clock.get_drift()
         self.onGoingTransmission = {
             u'channel': channel,
             u'packet':  packet,
@@ -90,9 +93,12 @@ class Radio(object):
             u'end_time':   start_time + self.capture_duration + self.byte_duration * packet[u'pkt_len']
         }
 
-    def txDone(self, isACKed):
+    def txDone(self):
         """end of tx slot"""
         self.state = d.RADIO_STATE_OFF
+
+        channel = self.channel
+        self.channel = None
 
         assert self.onGoingTransmission
 
@@ -109,27 +115,22 @@ class Radio(object):
 
         # nothing ongoing anymore
         self.onGoingTransmission = None
-
         # inform upper layer (TSCH)
-        self.mote.tsch.txDone(isACKed, self.channel)
-
-        # reset the channel
-        self.channel = None
-
-    # RX
-    def close(self):
-        """close the radio"""
-        pass
+        self.mote.tsch.txDone(channel)
 
 
-    def startRx(self, channel):
+    def startRx(self, channel, end_time, start_time=None):
         assert channel in d.TSCH_HOPPING_SEQUENCE
-        assert self.state != d.RADIO_STATE_LISTENING
+        assert self.state != d.RADIO_STATE_LISTENING, (self.mote.id, self.state)
 
         self.channel = channel
         # start time should be earlier than transmission
-        start_time_drift = self.mote.tsch.clock.get_drift()
-        start_time = self.engine.global_time + start_time_drift
+        if start_time is None:
+            start_time = self.engine.global_time
+
+        assert end_time > start_time
+        assert end_time > self.engine.global_time
+
         reception = {
             # listening channel
             u'channel': self.channel,
@@ -137,6 +138,7 @@ class Radio(object):
             u'mote': self.mote,
             # time at which the packet starts receving
             u'rx_time': start_time,
+            u'end_time': end_time,
             # the transmission which it lock on
             u'locked_transmission': None,
             u'deleted': False
@@ -149,9 +151,14 @@ class Radio(object):
 
     def rxDone(self, packet):
         """end of RX radio activity"""
-
-        # switch radio state
+        
+        # switch radio state, and the code for state switching should be first because rxDone may send ACK, which would change its radio state
         self.state   = d.RADIO_STATE_OFF
+
+        # restore channel first because tsch.rxDone may send ACK and reset the channel
+        channel = self.channel
+        # reset the channel
+        self.channel = None
 
         # log charge consumed
         if not packet:
@@ -170,13 +177,8 @@ class Radio(object):
             self._update_stats(u'rx_data')
 
         # inform upper layer (TSCH)
-        is_acked = self.mote.tsch.rxDone(packet, self.channel)
-
-        # reset the channel
-        self.channel = None
-
-        # return whether the frame is acknowledged or not
-        return is_acked
+        self.mote.tsch.rxDone(packet, channel)
+        
 
     def _update_stats(self, stats_type):
         self.stats[u'sleep'] += (

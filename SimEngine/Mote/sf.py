@@ -201,6 +201,7 @@ class SchedulingFunctionMSF(SchedulingFunctionBase):
 
     def indication_tx_cell_elapsed(self, cell, sent_packet):
         preferred_parent = self.mote.rpl.getPreferredParent()
+        
         if (
                 preferred_parent
                 and
@@ -977,7 +978,9 @@ class SchedulingFunctionMSF(SchedulingFunctionBase):
             num_rx_cells
         ):
         def callback(event, packet):
+            
             if event == d.SIXP_CALLBACK_EVENT_PACKET_RECEPTION:
+                
                 assert packet[u'app'][u'msgType'] == d.SIXP_MSG_TYPE_RESPONSE
                 if packet[u'app'][u'code'] == d.SIXP_RC_SUCCESS:
                     # add cells on success of the transaction

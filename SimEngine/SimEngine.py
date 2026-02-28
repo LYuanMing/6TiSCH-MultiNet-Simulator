@@ -43,7 +43,7 @@ class DiscreteEventEngine(threading.Thread):
         return cls._instance
     #===== end singleton
 
-    def __init__(self, cpuID=None, run_id=None, verbose=True):
+    def __init__(self, cpuID=None, run_id=None, verbose=False):
 
         #===== singleton
         cls = type(self)

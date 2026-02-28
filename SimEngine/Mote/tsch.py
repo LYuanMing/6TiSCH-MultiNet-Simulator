@@ -2,7 +2,7 @@
 """
 from __future__ import absolute_import
 from __future__ import division
-
+import traceback
 # =========================== imports =========================================
 
 from builtins import str
@@ -17,7 +17,7 @@ import random
 
 import netaddr
 
-from SimEngine.SimEngineDefines import MILLISECOND, SECOND
+from SimEngine.SimEngineDefines import MICROSECOND, MILLISECOND, SECOND
 from SimEngine.Mote.NetDefines import Packet
 
 # Mote sub-modules
@@ -47,9 +47,16 @@ class Tsch(object):
         self.log      = SimEngine.SimLog.SimLog().log
 
         # local variables
-        self.guard_time       = 3 * MILLISECOND
-        self.slotframes       = {}
-        self.txQueue          = []
+        self.tsch_ack_wait_time = MILLISECOND
+        self.tsRxGuardTimeBase  = MILLISECOND
+        self.tsRxGuardTime      = 3 * self.tsRxGuardTimeBase
+        self.tsTxOffset         = 2.120 * MILLISECOND
+        self.tsRxOffset         = self.tsTxOffset - self.tsRxGuardTimeBase if self.tsTxOffset - self.tsRxGuardTimeBase >= 0 else 0
+        self.tsTxAckDelay       = 2 * MILLISECOND
+        self.tsRxAckDelay       = self.tsTxAckDelay - self.tsRxGuardTimeBase if self.tsTxAckDelay - self.tsRxGuardTimeBase >= 0 else 0
+        self.tsRxAckWaitTime    = 4 * self.tsRxGuardTimeBase
+        self.slotframes         = {}
+        self.txQueue            = []
         if self.settings.tsch_tx_queue_size >= 0:
             self.txQueueSize  = self.settings.tsch_tx_queue_size
         elif self.settings.tsch_tx_queue_size == -1:
@@ -72,6 +79,7 @@ class Tsch(object):
             )
         self.neighbor_table   = []
         self.pktToSend        = None
+        self.pktReceived      = None
         self.waitingFor       = None
         self.active_cell      = None
         self.asnLastSync      = None
@@ -374,7 +382,8 @@ class Tsch(object):
         assert u'dstMac' in packet[u'mac']
         assert u'pkt_len' in packet
 
-        packet = Packet.from_dict(packet)
+        if not isinstance(packet, Packet):
+            packet = Packet.from_dict(packet)
 
         goOn = True
 
@@ -479,7 +488,14 @@ class Tsch(object):
         else:
             # do nothing
             pass
-
+        
+        # assert False, (packet[u'mac'][u'dstMac'] != d.BROADCAST_ADDRESS, 
+        #                isinstance(self.mote.sf, SchedulingFunctionMSF), 
+        #                not [
+        #                     _pkt for _pkt in self.txQueue
+        #                     if _pkt[u'mac'][u'dstMac'] == packet[u'mac'][u'dstMac']
+        #                 ],
+        #                 self.mote.sf.get_autonomous_tx_cell(packet[u'mac'][u'dstMac']))
         if (
                 packet[u'mac'][u'dstMac'] != d.BROADCAST_ADDRESS
                 and
@@ -579,15 +595,14 @@ class Tsch(object):
 
     # interface with radio
 
-    def txDone(self, isACKed, channel):
-        assert isACKed in [True,False]
-
-        asn         = self.engine.getAsn()
+    def txDone(self, channel):
         active_cell = self.active_cell
 
-        self.active_cell = None
+        if self.pktToSend[u'type'] == d.PKT_TYPE_ACK:
+            # if I am sending ACK, then I can said that this cell ends
+            self.active_cell = None
 
-        assert self.waitingFor == d.WAITING_FOR_TX
+        assert (self.waitingFor == d.WAITING_FOR_TX), self.waitingFor
 
         # log
         self.log(
@@ -603,8 +618,7 @@ class Tsch(object):
                     active_cell.channel_offset
                     if active_cell else None
                 ),
-                u'packet':         self.pktToSend,
-                u'isACKed':        isACKed,
+                u'packet':         self.pktToSend
             }
         )
 
@@ -616,98 +630,191 @@ class Tsch(object):
                 d.PKT_TYPE_DIO,
                 d.PKT_TYPE_DIS
             ]
-            assert isACKed == False
 
             # EBs are never in txQueue, no need to remove.
             if self.pktToSend[u'type'] != d.PKT_TYPE_EB:
                 self.dequeue(self.pktToSend)
+            
+            # If I have sent a broadcast packet, I should indicate this cell ends
+            if active_cell:
+                assert active_cell.is_tx_on()
+                self.mote.sf.indication_tx_cell_elapsed(
+                    cell = active_cell,
+                    sent_packet = self.pktToSend
+                )
+            self.waitingFor = None
+            self.pktToSend = None
+            # if this cell is used for broadcast, then we can end this cell
+            self.active_cell = None
+
+        elif self.pktToSend[u'type'] != d.PKT_TYPE_ACK:
+            # I just sent a unicast packet (not ack)...
+            
+            # I should check what packet it is
+            # if the packet is other type of packet, I should switch to RX mode to wait for ACK
+            rx_ack_start_time = self.engine.global_time + self.tsRxAckDelay
+
+            end_time_of_slot = (self.engine.getAsn() + 1) * self.settings.tsch_slotDuration
+            max_wait_ack_end_time = rx_ack_start_time + self.tsRxAckWaitTime
+            rx_ack_end_time = min(end_time_of_slot, max_wait_ack_end_time)
+
+            assert rx_ack_end_time > rx_ack_start_time, (rx_ack_start_time, max_wait_ack_end_time, end_time_of_slot)
+            self.mote.radio.startRx(channel, end_time = rx_ack_end_time, start_time = rx_ack_start_time) # listen for a millisecond
+            self.waitingFor = d.WAITING_FOR_ACK # wait for ACK
 
         else:
-            # I just sent a unicast packet...
-
-            # TODO send txDone up; need a more general way
-            if (
-                    (isACKed is True)
-                    and
-                    (self.pktToSend[u'type'] == d.PKT_TYPE_SIXP)
-                ):
-                self.mote.sixp.recv_mac_ack(self.pktToSend)
-
+            assert self.pktToSend[u'type'] == d.PKT_TYPE_ACK
+            # if I just sent a ACK, then I can said that RX cell is finished
+            self.waitingFor = None
+            self.pktToSend = None
+            # notify upper layers
             if active_cell:
-                self.mote.rpl.indicate_tx(
-                    active_cell,
-                    self.pktToSend[u'mac'][u'dstMac'],
-                    isACKed
+                assert active_cell.is_rx_on()
+                self.mote.sf.indication_rx_cell_elapsed(
+                    cell            = active_cell,
+                    received_packet = self.pktReceived
                 )
+
+    def _handle_received_broadcast_packet(self, packet):
+        active_cell = self.active_cell
+        # link-layer broadcast
+
+        # dispatch to the right upper layer
+        if   packet[u'type'] == d.PKT_TYPE_EB:
+            self._action_receiveEB(packet)
+        elif u'net' in packet:
+            assert packet[u'type'] in [
+                d.PKT_TYPE_DIO,
+                d.PKT_TYPE_DIS
+            ]
+            self.mote.sixlowpan.recvPacket(packet)
+        else:
+            raise SystemError()
+        
+        # notify upper layers
+        if active_cell:
+            assert active_cell.is_rx_on()
+            self.mote.sf.indication_rx_cell_elapsed(
+                cell            = active_cell,
+                received_packet = packet
+            )
+        # this cell ends
+        self.active_cell = None
+        self.waitingFor = None
+
+    def _handle_received_ACK(self, packet, channel):
+        active_cell = self.active_cell
+        if packet and packet[u'type'] == d.PKT_TYPE_ACK:
+            # that is what I expect, then check what type of packet I sent before 
+            if self.pktToSend[u'type'] == d.PKT_TYPE_SIXP: # if the packet type is sixp packet
+                self.mote.sixp.recv_mac_ack(self.pktToSend)
+            if active_cell:
+                active_cell.increment_num_tx_ack()
 
                 # update the backoff exponent
                 self._update_backoff_state(
                     isRetransmission = self._is_retransmission(self.pktToSend),
                     isSharedLink     = d.CELLOPTION_SHARED in active_cell.options,
-                    isTXSuccess      = isACKed,
+                    isTXSuccess      = True,
                     packet           = self.pktToSend
                 )
 
-            if isACKed:
-                # ... which was ACKed
+            # process the pending bit field
+            if (
+                    (self.pktToSend[u'mac'][u'pending_bit'] is True)
+                    and
+                    self._is_next_slot_unused()
+                ):
+                self._schedule_next_tx_for_pending_bit(
+                    self.pktToSend[u'mac'][u'dstMac'],
+                    channel
+                )
+            else:
+                self.args_for_next_pending_bit_task = None
+            # remove packet from queue
+            self.dequeue(self.pktToSend)
+            
+        else:
+            # I receive the wrong type of packet or nothing, reschedule the retransmission
+            if active_cell:
+                # update the backoff exponent
+                self._update_backoff_state(
+                    isRetransmission = self._is_retransmission(self.pktToSend),
+                    isSharedLink     = d.CELLOPTION_SHARED in active_cell.options,
+                    isTXSuccess      = False,
+                    packet           = self.pktToSend
+                )
 
-                # update schedule stats
-                if active_cell:
-                    active_cell.increment_num_tx_ack()
+            # decrement 'retriesLeft' counter associated with that packet
+            assert self.pktToSend[u'mac'][u'retriesLeft'] >= 0
+            self.pktToSend[u'mac'][u'retriesLeft'] -= 1
 
-                # time correction
-                if self.clock.source == self.pktToSend[u'mac'][u'dstMac']:
-                    self.asnLastSync = asn # ACK-based sync
-                    self.clock.sync()
-                    self._reset_keep_alive_timer()
-                    self._reset_synchronization_timer()
+            # drop packet if retried too many time
+            if self.pktToSend[u'mac'][u'retriesLeft'] < 0:
 
                 # remove packet from queue
                 self.dequeue(self.pktToSend)
 
-                # process the pending bit field
-                if (
-                        (self.pktToSend[u'mac'][u'pending_bit'] is True)
-                        and
-                        self._is_next_slot_unused()
-                    ):
-                    self._schedule_next_tx_for_pending_bit(
-                        self.pktToSend[u'mac'][u'dstMac'],
-                        channel
-                    )
-                else:
-                    self.args_for_next_pending_bit_task = None
+                # drop
+                self.mote.drop_packet(
+                    packet = self.pktToSend,
+                    reason = SimEngine.SimLog.DROPREASON_MAX_RETRIES,
+                )
 
-            else:
-                # ... which was NOT ACKed
-
-                # decrement 'retriesLeft' counter associated with that packet
-                assert self.pktToSend[u'mac'][u'retriesLeft'] >= 0
-                self.pktToSend[u'mac'][u'retriesLeft'] -= 1
-
-                # drop packet if retried too many time
-                if self.pktToSend[u'mac'][u'retriesLeft'] < 0:
-
-                    # remove packet from queue
-                    self.dequeue(self.pktToSend)
-
-                    # drop
-                    self.mote.drop_packet(
-                        packet = self.pktToSend,
-                        reason = SimEngine.SimLog.DROPREASON_MAX_RETRIES,
-                    )
-
-        # notify upper layers
+        # no matter I received ACK or not, I should indicate this cell ends
         if active_cell:
-            assert active_cell.is_tx_on()
             self.mote.sf.indication_tx_cell_elapsed(
-                cell        = active_cell,
+                cell = active_cell,
                 sent_packet = self.pktToSend
             )
-
-        # end of radio activity, not waiting for anything
         self.waitingFor = None
-        self.pktToSend  = None
+        self.active_cell = None # this cell ends
+        self.pktToSend = None
+
+
+    def _handle_received_unicast_packet(self, packet, channel):
+        # link-layer unicast to me
+
+        # save the pending bit here since the packet instance may be made
+        # empty by an upper layer process
+        is_pending_bit_on = packet[u'mac'][u'pending_bit']
+
+        # dispatch to the right upper layer
+        if   packet[u'type'] == d.PKT_TYPE_SIXP:
+            self.mote.sixp.recv_packet(packet)
+        elif packet[u'type'] == d.PKT_TYPE_KEEP_ALIVE:
+            # do nothing but send back an ACK
+            pass
+        elif u'net' in packet:
+            self.mote.sixlowpan.recvPacket(packet)
+        else:
+            raise SystemError()
+
+        if (
+                is_pending_bit_on
+                and
+                self._is_next_slot_unused()
+            ):
+            self._schedule_next_rx_by_pending_bit(channel)
+
+        # so I receive unicast packet, and I should send an ACK in the future
+        self._send_ACK(channel, packet[u'mac'][u'srcMac'])
+
+    # sendACK
+    def _send_ACK(self, channel, dstMac):
+        # create an ACK
+        new_ACK = {
+            u'type': d.PKT_TYPE_ACK,
+            u'mac': {
+                u'srcMac': self.mote.get_mac_addr(),
+                u'dstMac': dstMac
+            },
+            u'pkt_len': d.PKT_LEN_ACK
+        }
+        self.pktToSend = Packet.from_dict(new_ACK)
+        tx_ack_start_time = self.engine.global_time + self.tsTxAckDelay
+        self.mote.radio.startTx(channel, self.pktToSend, start_time=tx_ack_start_time)
+        self.waitingFor = d.WAITING_FOR_TX
 
     def rxDone(self, packet, channel):
 
@@ -715,40 +822,21 @@ class Tsch(object):
         asn         = self.engine.getAsn()
         active_cell = self.active_cell
 
-        self.active_cell = None
         # copy the received packet to a new packet instance since the passed
         # "packet" should be kept as it is so that Connectivity can use it
         # after this rxDone() process.
-        new_packet = copy.deepcopy(packet)
-        packet = new_packet
+        packet = copy.deepcopy(packet)
+        self.pktReceived = packet
         # make sure I'm in the right state
-        assert self.waitingFor == d.WAITING_FOR_RX
-
-        # not waiting for anything anymore
-        self.waitingFor = None
+        assert (self.waitingFor == d.WAITING_FOR_RX or self.waitingFor == d.WAITING_FOR_ACK), self.waitingFor
 
         if packet:
-            # add the source mote to the neighbor list if it's not listed yet
-            if packet[u'mac'][u'srcMac'] not in self.neighbor_table:
-                self.neighbor_table.append(packet[u'mac'][u'srcMac'])
-
-            # accept only EBs while we're not syncrhonized
-            if (
-                    (self.getIsSync() is False)
-                    and
-                    (packet[u'type'] != d.PKT_TYPE_EB)
-                ):
-                return False # isACKed
-
-            # abort if I received a frame for someone else
-            if (
-                    (packet[u'mac'][u'dstMac'] != d.BROADCAST_ADDRESS)
-                    and
-                    (self.mote.is_my_mac_addr(packet[u'mac'][u'dstMac']) is False)
-                ):
-                return False # isACKed
-
-            # if I get here, I received a frame at the link layer (either unicast for me, or broadcast)
+            # time correction
+            if self.clock.source == packet[u'mac'][u'srcMac']:
+                self.asnLastSync = asn # packet-based sync
+                self.clock.sync()
+                self._reset_keep_alive_timer()
+                self._reset_synchronization_timer()
 
             # log
             self.log(
@@ -756,6 +844,7 @@ class Tsch(object):
                 {
                     u'_mote_id':       self.mote.id,
                     u'channel':        channel,
+                    u'is_sync':         self.isSync,
                     u'slot_offset':    (
                         active_cell.slot_offset
                         if active_cell else None
@@ -768,12 +857,38 @@ class Tsch(object):
                 }
             )
 
-            # time correction
-            if self.clock.source == packet[u'mac'][u'srcMac']:
-                self.asnLastSync = asn # packet-based sync
-                self.clock.sync()
-                self._reset_keep_alive_timer()
-                self._reset_synchronization_timer()
+        # I should check whether I am waiting for an ACK,
+        if self.waitingFor == d.WAITING_FOR_ACK:
+            self._handle_received_ACK(packet, channel)
+        # if I am waiting for RX, then I should check whether this packet is valid and I should schedule the ACK transmission
+        elif packet:
+            # add the source mote to the neighbor list if it's not listed yet
+            if packet[u'mac'][u'srcMac'] not in self.neighbor_table:
+                self.neighbor_table.append(packet[u'mac'][u'srcMac'])
+
+            # accept only EBs while we're not syncrhonized
+            if (
+                    (self.getIsSync() is False)
+                    and
+                    (packet[u'type'] != d.PKT_TYPE_EB)
+                ):
+                self.waitingFor = None
+                self.active_cell = None # this cell ends if it doesn't receive expected packet
+                self.pktToSend = None # if we expect the ACK but receive other packet
+                return
+
+            # abort if I received a frame for someone else
+            if (
+                    (packet[u'mac'][u'dstMac'] != d.BROADCAST_ADDRESS)
+                    and
+                    (self.mote.is_my_mac_addr(packet[u'mac'][u'dstMac']) is False)
+                ):
+                self.waitingFor = None
+                self.active_cell = None # this cell ends if it doesn't receive expected packet
+                self.pktToSend = None # if we expect the ACK but receive other packet
+                return
+
+            # if I get here, I received a frame at the link layer (either unicast for me, or broadcast)
 
             # update schedule stats
             if (
@@ -784,66 +899,25 @@ class Tsch(object):
                     active_cell.increment_num_rx()
 
             if   self.mote.is_my_mac_addr(packet[u'mac'][u'dstMac']):
-                # link-layer unicast to me
-
-                # ACK frame
-                isACKed = True
-
-                # save the pending bit here since the packet instance may be made
-                # empty by an upper layer process
-                is_pending_bit_on = packet[u'mac'][u'pending_bit']
-
-                # dispatch to the right upper layer
-                if   packet[u'type'] == d.PKT_TYPE_SIXP:
-                    self.mote.sixp.recv_packet(packet)
-                elif packet[u'type'] == d.PKT_TYPE_KEEP_ALIVE:
-                    # do nothing but send back an ACK
-                    pass
-                elif u'net' in packet:
-                    self.mote.sixlowpan.recvPacket(packet)
-                else:
-                    raise SystemError()
-
-                if (
-                        is_pending_bit_on
-                        and
-                        self._is_next_slot_unused()
-                    ):
-                    self._schedule_next_rx_by_pending_bit(channel)
-
+                self._handle_received_unicast_packet(packet, channel)
             elif packet[u'mac'][u'dstMac'] == d.BROADCAST_ADDRESS:
-                # link-layer broadcast
-
-                # do NOT ACK frame (broadcast)
-                isACKed = False
-
-                # dispatch to the right upper layer
-                if   packet[u'type'] == d.PKT_TYPE_EB:
-                    self._action_receiveEB(packet)
-                elif u'net' in packet:
-                    assert packet[u'type'] in [
-                        d.PKT_TYPE_DIO,
-                        d.PKT_TYPE_DIS
-                    ]
-                    self.mote.sixlowpan.recvPacket(packet)
-                else:
-                    raise SystemError()
-
+                self._handle_received_broadcast_packet(packet)
             else:
                 raise SystemError()
-        else:
-            # received nothing (idle listen)
-            isACKed = False
 
-        # notify upper layers
-        if active_cell:
-            assert active_cell.is_rx_on()
-            self.mote.sf.indication_rx_cell_elapsed(
-                cell            = active_cell,
-                received_packet = packet
-            )
-
-        return isACKed
+        # else expected packet is not ACK and I receive nothing
+        # (only when waitingFor != WAITING_FOR_ACK)
+        elif self.waitingFor != d.WAITING_FOR_ACK:
+            self.waitingFor = None
+            self.pktToSend = None
+            self.active_cell = None # this cell ends
+            # notify upper layers
+            if active_cell and active_cell.is_rx_on():
+                self.mote.sf.indication_rx_cell_elapsed(
+                    cell            = active_cell,
+                    received_packet = packet
+                )
+        return
 
     #======================== private ==========================================
 
@@ -857,13 +931,14 @@ class Tsch(object):
         assert not self.getIsSync()
         
         # choose random channel
-        channel = random.choice(self.hopping_sequence)
+        if self.mote.radio.state == d.RADIO_STATE_OFF:
+            assert self.waitingFor == None, self.waitingFor
 
-        # start listening
-        self.mote.radio.startRx(channel)
-
-        # indicate that we're waiting for the RX operation to finish
-        self.waitingFor = d.WAITING_FOR_RX
+            channel = random.choice(self.hopping_sequence)
+            # start listening
+            self.mote.radio.startRx(channel, end_time = self.engine.global_time + (self.settings.tsch_slotDuration - self.engine.time_step))
+            # indicate that we're waiting for the RX operation to finish
+            self.waitingFor = d.WAITING_FOR_RX
 
         # schedule next listeningForEB cell
         self.schedule_next_listeningForEB_cell()
@@ -914,7 +989,7 @@ class Tsch(object):
     def _select_active_cell(self, candidate_cells):
         active_cell = None
         packet_to_send = None
-
+        
         for cell in candidate_cells:
             if cell.is_tx_on():
                 if (
@@ -1024,11 +1099,8 @@ class Tsch(object):
 
         # local shorthands
         asn = self.engine.getAsn()
-
         # make sure we're not in the middle of a TX/RX operation
-        assert self.waitingFor == None
-        # make sure we are not busy sending a packet
-        assert self.pktToSend == None
+        assert self.waitingFor == None, (self.mote.id, self.waitingFor)
 
         # section 6.2.6.4 of IEEE 802.15.4-2015:
         # "When, for any given timeslot, a device has links in multiple
@@ -1087,7 +1159,7 @@ class Tsch(object):
         # schedule the next active slot
         self._schedule_next_active_slot()
 
-    def _action_TX(self, pktToSend, channel):
+    def _action_TX(self, pktToSend, channel): 
         # set the pending bit field
         if (
                 (pktToSend[u'mac'][u'dstMac'] != d.BROADCAST_ADDRESS)
@@ -1115,18 +1187,20 @@ class Tsch(object):
             pktToSend[u'mac'][u'pending_bit'] = False
 
         # send packet to the radio
-        self.mote.radio.startTx(channel, pktToSend)
+        tx_start_time = self.engine.global_time + self.tsTxOffset
+        self.mote.radio.startTx(channel, pktToSend, tx_start_time)
 
         # indicate that we're waiting for the TX operation to finish
         self.waitingFor = d.WAITING_FOR_TX
 
-    def _action_RX(self):
-
+    def _action_RX(self, end_time = None):
+        if end_time is None:
+            end_time = self.engine.global_time + self.tsRxGuardTime
         # start listening
         self.mote.radio.startRx(
-            channel = self._get_physical_channel(self.active_cell)
+            channel = self._get_physical_channel(self.active_cell),
+            end_time = end_time
         )
-
         # indicate that we're waiting for the RX operation to finish
         self.waitingFor = d.WAITING_FOR_RX
 
@@ -1335,7 +1409,8 @@ class Tsch(object):
             u'mac': {
                 u'srcMac': self.mote.get_mac_addr(),
                 u'dstMac': self.clock.source
-            }
+            },
+            u'pkt_len': 21
         }
         self.enqueue(packet, priority=True)
         # the next keep-alive event will be scheduled on receiving an ACK
@@ -1467,16 +1542,18 @@ class Tsch(object):
                 channel   = self.args_for_next_pending_bit_task[u'channel']
             )
 
-    def _action_rx_for_pending_bit(self):
+    def _action_rx_for_pending_bit(self, end_time = None):
         if self.args_for_next_pending_bit_task is None:
             # it seems this RX was canceled by an active cell scheduled on the
             # same slot
             return
-
+        if end_time is None:
+            end_time = self.engine.global_time + self.tsRxGuardTime
         # self.args_for_next_pending_bit_task will be updated in the RX
         # operation
         self.mote.radio.startRx(
-            self.args_for_next_pending_bit_task[u'channel']
+            self.args_for_next_pending_bit_task[u'channel'],
+            end_time = end_time
         )
         self.waitingFor = d.WAITING_FOR_RX
 
@@ -1544,7 +1621,7 @@ class Clock(object):
             self._clock_off_on_sync = off_from_source + source_clock.get_drift()
 
         self._accumulated_error = 0
-        self._last_clock_access = self.engine.getAsn()
+        self._last_clock_access = self.engine.global_time
 
     def get_drift(self):
         if self.mote.dagRoot is True:

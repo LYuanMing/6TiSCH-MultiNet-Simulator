@@ -246,7 +246,8 @@ class Rpl(object):
                 u'dstIp':         dstIp,
                 u'packet_length': d.PKT_LEN_DIS
             },
-            u'app' : {}
+            u'app' : {},
+            u'pkt_len': d.PKT_LEN_DIS
         }
         self.log(
             SimEngine.SimLog.LOG_RPL_DIS_TX,
@@ -450,6 +451,7 @@ class Rpl(object):
                 u'dstIp':           self.dodagId,       # to DAGroot
                 u'packet_length':   d.PKT_LEN_DAO,
             },
+            u'pkt_len': d.PKT_LEN_DAO
         }
 
         # log

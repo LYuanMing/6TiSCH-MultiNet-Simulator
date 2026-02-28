@@ -531,7 +531,7 @@ class TestTransaction(object):
             )
         else:
             assert fixture_msg_type == d.SIXP_MSG_TYPE_CONFIRMATION
-            u.run_until_asn(sim_engine, 102)
+            u.run_until_asn(sim_engine, 103)
 
             # we should have two sixp.rx logs: one is for the request, the
             # other is for response
@@ -573,7 +573,7 @@ class TestTransaction(object):
         mote = sim_engine.motes[1]
 
         root.sf.issue_add_request(mote.get_mac_addr())
-        u.run_until_asn(sim_engine, 101)
+        u.run_until_asn(sim_engine, 102)
 
         # mote should receive the request
         logs = u.read_log_file([SimLog.LOG_SIXP_RX['type']])

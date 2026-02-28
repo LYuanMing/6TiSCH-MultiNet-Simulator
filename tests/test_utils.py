@@ -74,7 +74,13 @@ def run_until_everyone_joined(sim_engine):
 
     def new_setIsJoined(self, value):
         self.original_setIsJoined(value)
-        joined_node_set.add(self.mote.id)
+        
+        nonlocal joined_node_set
+        joined_node_set  = set(
+            [
+                mote for mote in sim_engine.motes if mote.secjoin.getIsJoined()
+            ]
+        )
 
         # stop the simulator if it's time to do
         if len(joined_node_set) == len(sim_engine.motes):

@@ -138,6 +138,7 @@ class SecJoin(object):
                         u'dstIp':            self.mote.rpl.dodagId,
                         u'packet_length':    packet[u'net'][u'packet_length'],
                     },
+                    u'pkt_len': packet[u'net'][u'packet_length']
                 }
 
                 # send proxied join response
@@ -163,6 +164,7 @@ class SecJoin(object):
                         u'dstIp':            packet[u'net'][u'srcIp'],            # to join proxy
                         u'packet_length':    d.PKT_LEN_JOIN_RESPONSE,
                     },
+                    u'pkt_len': d.PKT_LEN_JOIN_RESPONSE
                 }
 
                 # send join response
@@ -192,6 +194,7 @@ class SecJoin(object):
                             u'dstIp':            pledge_addr,
                             u'packet_length':    packet[u'net'][u'packet_length'],
                         },
+                        u'pkt_len': packet[u'net'][u'packet_length']
                     }
 
                     # send proxied join response
@@ -269,6 +272,7 @@ class SecJoin(object):
                 u'dstIp':                str(self.mote.tsch.join_proxy.ipv6_link_local()),
                 u'packet_length':        d.PKT_LEN_JOIN_REQUEST,
             },
+            u'pkt_len':                  d.PKT_LEN_JOIN_REQUEST
         }
 
         # send join request

@@ -4,6 +4,7 @@
 NUM_SUFFICIENT_TX                           = 10      # sufficient num. of tx to estimate pdr by ACK
 WAITING_FOR_TX                              = u'waiting_for_tx'
 WAITING_FOR_RX                              = u'waiting_for_rx'
+WAITING_FOR_ACK                             = u'waiting_for_ack'
 
 # === addressing
 BROADCAST_ADDRESS                           = u'FF-FF'
@@ -19,14 +20,18 @@ PKT_TYPE_DAO                                = u'DAO'
 PKT_TYPE_EB                                 = u'EB'
 PKT_TYPE_SIXP                               = u'6P'
 PKT_TYPE_KEEP_ALIVE                         = u'KEEP_ALIVE'
+PKT_TYPE_ACK                                = u'ACK'
 
 # === packet lengths
 PKT_LEN_DIS                                 = 8
+PKT_LEN_ACK                                 = 11
 PKT_LEN_DIO                                 = 76
 PKT_LEN_DAO                                 = 20
 PKT_LEN_JOIN_REQUEST                        = 20
 PKT_LEN_JOIN_RESPONSE                       = 20
 PKT_LEN_EB                                  = 63
+PKT_LEN_KEEP_ALIVE                          = 24
+PKT_LEN_SIXP                                = 25
 # === rpl
 RPL_MINHOPRANKINCREASE                      = 256
 RPL_PARENT_SWITCH_RANK_THRESHOLD            = 640
@@ -100,10 +105,11 @@ CELLOPTION_SHARED                           = u'SHARED'
 LINKTYPE_ADVERTISING                        = u'ADVERTISING'
 LINKTYPE_ADVERTISING_ONLY                   = u'ADVERTISING_ONLY'
 LINKTYPE_NORMAL                             = u'NORMAL'
-INTRASLOTORDER_STARTSLOT                    = 0
-INTRASLOTORDER_PROPAGATE                    = 1
-INTRASLOTORDER_STACKTASKS                   = 2
-INTRASLOTORDER_ADMINTASKS                   = 3
+INTRASLOTORDER_PROPAGATE                    = 0
+INTRASLOTORDER_STARTSLOT                    = 1
+INTRASLOTORDER_ENDSLOT                      = 2
+INTRASLOTORDER_STACKTASKS                   = 3
+INTRASLOTORDER_ADMINTASKS                   = 4
 
 # === radio
 RADIO_STATE_TX                              = u'tx'

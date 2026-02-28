@@ -2,14 +2,10 @@ from typing import NamedTuple
 from dataclasses import dataclass, field
 import itertools
 
-TIME_RESOLUTION = 'us'  # 'us' for microsecond, 'ns' for nanosecond
-if TIME_RESOLUTION == 'ms':
-    SECOND = 1_000
-    MILLISECOND = 1
-elif TIME_RESOLUTION == 'us':
-    SECOND = 1_000_000
-    MILLISECOND = 1_000
-    MICROSECOND = 1
+TIME_RESOLUTION = 'us'  # 'us' for microsecond
+SECOND = 1_000_000
+MILLISECOND = 1_000
+MICROSECOND = 1
 TIME_STEP = MICROSECOND * 100  # 100 microseconds
 
 
