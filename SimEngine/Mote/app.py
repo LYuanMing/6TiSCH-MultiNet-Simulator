@@ -205,7 +205,6 @@ class AppPeriodic(AppBase):
             # compute random delay
             assert self.settings.app_pkPeriodVar < 1
             delay = self.settings.app_pkPeriod * (1 + random.uniform(-self.settings.app_pkPeriodVar, self.settings.app_pkPeriodVar))
-
         # schedule
         self.engine.scheduleIn(
             delay           = delay,

@@ -59,14 +59,14 @@ def init_mote():
     }
 
 # =========================== KPIs ============================================
+file_settings = None
 
 @openfile
 def kpis_all(inputfile):
-
+    global file_settings
     allstats = {} # indexed by run_id, mote_id
 
-    file_settings = json.loads(inputfile.readline())  # first line contains settings
-
+    # file_settings = json.loads(inputfile)  # first line contains settings
     # === gather raw stats
 
     for line in inputfile:
@@ -100,9 +100,10 @@ def kpis_all(inputfile):
             # only log non-dagRoot sync times
             if mote_id == DAGROOT_ID:
                 continue
-
-            allstats[run_id][mote_id]['sync_asn']  = asn
-            allstats[run_id][mote_id]['sync_time_s'] = asn*file_settings['tsch_slotDuration']
+            
+            if allstats[run_id][mote_id]['sync_asn'] is None:
+                allstats[run_id][mote_id]['sync_asn']  = asn
+                allstats[run_id][mote_id]['sync_time_s'] = asn*file_settings['tsch_slotDuration']
 
         elif logline['_type'] == SimLog.LOG_SECJOIN_JOINED['type']:
             # joined
@@ -116,8 +117,9 @@ def kpis_all(inputfile):
 
             # populate
             assert allstats[run_id][mote_id]['sync_asn'] is not None
-            allstats[run_id][mote_id]['join_asn']  = asn
-            allstats[run_id][mote_id]['join_time_s'] = asn*file_settings['tsch_slotDuration']
+            if allstats[run_id][mote_id]['join_asn'] is None:
+                allstats[run_id][mote_id]['join_asn']  = asn
+                allstats[run_id][mote_id]['join_time_s'] = asn*file_settings['tsch_slotDuration']
 
         elif logline['_type'] == SimLog.LOG_APP_TX['type']:
             # packet transmission
@@ -165,21 +167,49 @@ def kpis_all(inputfile):
             # only log non-dagRoot charge
             if mote_id == DAGROOT_ID:
                 continue
-
-            charge =  logline['idle_listen'] * d.CHARGE_IdleListen_uC
-            charge += logline['tx_data_rx_ack'] * d.CHARGE_TxDataRxAck_uC
-            charge += logline['rx_data_tx_ack'] * d.CHARGE_RxDataTxAck_uC
-            charge += logline['tx_data'] * d.CHARGE_TxData_uC
-            charge += logline['rx_data'] * d.CHARGE_RxData_uC
-            charge += logline['sleep'] * d.CHARGE_Sleep_uC
+            
+            if file_settings['conn_class'] == 'MultiPHY':
+                if file_settings['conn_phy_mode'] == '1M_GFSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_1M_GFSK
+                elif file_settings['conn_phy_mode'] == '1M_QPSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_1M_QPSK
+                elif file_settings['conn_phy_mode'] == '1M_8PSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_1M_8PSK
+                elif file_settings['conn_phy_mode'] == '2M_GFSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_2M_GFSK
+                elif file_settings['conn_phy_mode'] == '2M_QPSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_2M_QPSK
+                elif file_settings['conn_phy_mode'] == '2M_8PSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_2M_8PSK
+                elif file_settings['conn_phy_mode'] == '4M_GFSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_4M_GFSK
+                elif file_settings['conn_phy_mode'] == '4M_QPSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_4M_QPSK
+                elif file_settings['conn_phy_mode'] == '4M_8PSK':
+                    factor = d.SPARKLINK_CHARGE_ScalingFactor_4M_8PSK
+                else:
+                    assert False, "Unknown PHY mode: {0}".format(file_settings['conn_phy_mode'])
+                charge =  logline['idle_listen'] * d.SPARKLINK_CHARGE_Base_IdleListen_uC
+                charge += logline['tx_data_rx_ack'] * d.SPARKLINK_CHARGE_Base_TxDataRxAck_uC * factor
+                charge += logline['rx_data_tx_ack'] * d.SPARKLINK_CHARGE_Base_RxDataTxAck_uC * factor
+                charge += logline['tx_data'] * d.SPARKLINK_CHARGE_Base_TxData_uC * factor
+                charge += logline['rx_data'] * d.SPARKLINK_CHARGE_Base_RxData_uC * factor
+                charge += logline['sleep'] * d.SPARKLINK_CHARGE_Base_Sleep_uC
+            else:
+                charge =  logline['idle_listen'] * d.CHARGE_IdleListen_uC
+                charge += logline['tx_data_rx_ack'] * d.CHARGE_TxDataRxAck_uC
+                charge += logline['rx_data_tx_ack'] * d.CHARGE_RxDataTxAck_uC
+                charge += logline['tx_data'] * d.CHARGE_TxData_uC
+                charge += logline['rx_data'] * d.CHARGE_RxData_uC
+                charge += logline['sleep'] * d.CHARGE_Sleep_uC
 
             allstats[run_id][mote_id]['charge_asn'] = asn
             allstats[run_id][mote_id]['charge']     = charge
 
     # === compute advanced motestats
-
     for (run_id, per_mote_stats) in list(allstats.items()):
         for (mote_id, motestats) in list(per_mote_stats.items()):
+
             if mote_id != 0:
 
                 if (motestats['sync_asn'] is not None) and (motestats['charge_asn'] is not None):
@@ -250,14 +280,12 @@ def kpis_all(inputfile):
             # current consumed
 
             current_consumed.append(motestats['charge'])
-            if motestats['lifetime_AA_years'] is not None:
-                lifetimes.append(motestats['lifetime_AA_years'])
+            if motestats['lifetime_AA_years'] is not None and motestats['lifetime_AA_years'] != 'N/A':
+                lifetimes.append(float(motestats['lifetime_AA_years']))
             current_consumed = [
                 value for value in current_consumed if value is not None
             ]
-
         #-- save stats
-
         allstats[run_id]['global-stats'] = {
             'e2e-upstream-delivery': [
                 {
@@ -405,6 +433,7 @@ def kpis_all(inputfile):
 # =========================== main ============================================
 
 def main():
+    global file_settings
 
     # FIXME: This logic could be a helper method for other scripts
     # Identify simData having the latest results. That directory should have
@@ -416,7 +445,15 @@ def main():
     for infile in glob.glob(os.path.join(subfolder, '*.dat')):
         print('generating KPIs for {0}'.format(infile))
 
-        # gather the kpis
+        config_files = glob.glob(os.path.join(subfolder, 'config.json'))
+        assert len(config_files) == 1, 'Expected exactly one config file in {0}'.format(subfolder)
+        if config_files:
+            # gather the kpis
+            config_path = config_files[0]
+            with open(config_path, 'r') as f:
+                file_settings = json.load(f)
+        else:
+            assert False, 'Expected exactly one config file in {0}'.format(subfolder)
         kpis = kpis_all(infile)
 
         # print on the terminal

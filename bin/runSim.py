@@ -38,6 +38,7 @@ from SimEngine import SimConfig,   \
                       Connectivity
 
 # =========================== helpers =========================================
+settings = None
 
 def parseCliParams():
 
@@ -71,7 +72,7 @@ def runSimCombinations(params):
     Runs simulations for all combinations of simulation settings.
     This function may run independently on different CPUs.
     """
-
+    global settings
     cpuID              = params['cpuID']
     pid                = params['pid']
     numRuns            = params['numRuns']
@@ -119,7 +120,6 @@ def runSimCombinations(params):
             simlog.set_log_filters(simconfig.logging)
             simengine        = SimEngine.SimEngine(run_id=run_id, verbose=verbose)
 
-
             # start simulation run
             simengine.start()
 
@@ -130,7 +130,7 @@ def runSimCombinations(params):
             simlog.destroy()
             simengine.destroy()
             Connectivity.Connectivity().destroy()
-            settings.destroy() # destroy last, Connectivity needs it
+            # settings.destroy() # destroy last, Connectivity needs it
 
         # printOrLog
         output  = 'simulation ended after {0:.0f}s ({1} runs).'.format(
@@ -197,7 +197,6 @@ def main():
     
     # cli params
     cliparams = parseCliParams()
-
     # sim config
     simconfig = SimConfig.SimConfig(configfile=cliparams['config'])
     assert simconfig.version == 0
@@ -304,7 +303,8 @@ def main():
 
     # copy config file into output directory
     with open(os.path.join(folder_path, 'config.json'), 'w') as f:
-        f.write(simconfig.get_config_data())
+        # f.write(simconfig.get_config_data())
+        f.write(json.dumps(settings.__dict__))
 
     #=== post-simulation actions
 

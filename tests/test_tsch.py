@@ -995,7 +995,7 @@ def test_desync(
         assert len(logs) == 1
         log = logs[0]
         assert log['_mote_id'] == mote.id
-        assert log['_asn'] == d.TSCH_DESYNCHRONIZED_TIMEOUT_SLOTS
+        assert log['_asn'] == int((d.TSCH_DESYNCHRONIZED_TIMEOUT_SECONDS / sim_engine.settings.tsch_slotDuration))
 
 def test_tx_queue_of_infinite_size(sim_engine):
     sim_engine = sim_engine(

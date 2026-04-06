@@ -50,12 +50,16 @@ class Radio(object):
             u'rx_data'       : 0,
             u'sleep'         : 0,
         }
-        self.log_stats_interval_asn = int(
-            float(self.settings.radio_stats_log_period_s) /
-            self.settings.tsch_slotDuration
-        )
+        self._log_stats_interval_asn = 60 / 0.01
+
         if self.log_stats_interval_asn > 0:
             self._schedule_log_stats()
+
+    @property
+    def log_stats_interval_asn(self):
+        if hasattr(self.settings, 'tsch_slotDuration') and self.settings.tsch_slotDuration:
+            self._log_stats_interval_asn = int(self.settings.radio_stats_log_period_s / self.settings.tsch_slotDuration)
+        return self._log_stats_interval_asn
 
     # ======================= public ==========================================
 

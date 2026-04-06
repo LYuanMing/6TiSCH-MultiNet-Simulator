@@ -62,7 +62,7 @@ def main(options):
                 # fill data list
                 for run in kpis.values():
                     for mote in run.values():
-                        if key in mote:
+                        if key in mote and mote[key] != 'N/A' and mote[key] is not None:
                             data[curr_combination].append(mote[key])
 
         # plot

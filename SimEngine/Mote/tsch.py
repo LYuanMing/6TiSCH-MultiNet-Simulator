@@ -81,16 +81,18 @@ class Tsch(object):
         self.pending_bit_enabled            = False
         self.args_for_next_pending_bit_task = None
 
-        assert self.settings.phy_numChans <= len(d.TSCH_HOPPING_SEQUENCE)
-        self.hopping_sequence = (
-            d.TSCH_HOPPING_SEQUENCE[:self.settings.phy_numChans]
-        )
-
         # install the default slotframe
         self.add_slotframe(
             slotframe_handle = 0,
             length           = self.settings.tsch_slotframeLength
         )
+
+    @property
+    def hopping_sequence(self):
+        if hasattr(self.settings, 'phy_numChans') and self.settings.phy_numChans:
+            if self.settings.phy_numChans <= len(d.TSCH_HOPPING_SEQUENCE):
+                return d.TSCH_HOPPING_SEQUENCE[:self.settings.phy_numChans]
+        return d.TSCH_HOPPING_SEQUENCE
 
     #======================== public ==========================================
 
@@ -1386,7 +1388,7 @@ class Tsch(object):
             # do nothing
             pass
         else:
-            target_asn = self.engine.getAsn() + d.TSCH_DESYNCHRONIZED_TIMEOUT_SLOTS
+            target_asn = self.engine.getAsn() + int(d.TSCH_DESYNCHRONIZED_TIMEOUT_SECONDS / self.settings.tsch_slotDuration)
 
             def _desync():
                 self.setIsSync(False)

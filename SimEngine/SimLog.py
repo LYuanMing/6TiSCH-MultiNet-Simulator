@@ -146,12 +146,12 @@ class SimLog(object):
             # append logs to the file. this happens if you multiple runs on the
             # same CPU. And amend config line; config line in log file should have
             # '_type' field. And 'run_id' type should be '_run_id'
-            config_line = copy.deepcopy(self.settings.__dict__)
-            config_line[u'_type']   = u'config'
-            config_line[u'_run_id'] = config_line[u'run_id']
-            del config_line[u'run_id']
-            json_string = json.dumps(config_line)
-            self.log_output_file.write(json_string + u'\n')
+            # config_line = copy.deepcopy(self.settings.__dict__)
+            # config_line[u'_type']   = u'config'
+            # config_line[u'_run_id'] = config_line[u'run_id']
+            # del config_line[u'run_id']
+            # json_string = json.dumps(config_line)
+            # self.log_output_file.write(json_string + u'\n')
         except:
             # destroy the singleton
             cls._instance = None

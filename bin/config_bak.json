@@ -6,7 +6,7 @@
     },
     "settings": {
         "combination": {
-            "exec_numMotes":                               [50]
+            "exec_numMotes":                               [500]
         },
         "regular": {
             "exec_numSlotframesPerRun":                    20000,
@@ -34,6 +34,7 @@
 
             "sf_class":                                    "MSF",
 
+            "tsch_slotDuration":                           0.010,
             "tsch_slotframeLength":                        101,
             "tsch_probBcast_ebProb":                       0.33,
             "tsch_clock_max_drift_ppm":                    30,
@@ -45,16 +46,16 @@
 
             "radio_stats_log_period_s":                    60,
 
-            "conn_class":                                  "MultiPHY",
-            "conn_phy_mode":                               "1M_GFSK",
-
+            "conn_class":                                  "Random",
             "conn_simulate_ack_drop":                      false,
 
             "conn_trace":                                  null,
 
-            "conn_random_square_side":                     100.0,
+            "conn_random_square_side":                     2.000,
             "conn_random_init_min_pdr":                    0.5,
             "conn_random_init_min_neighbors":              3,
+
+            "phy_numChans":                                16,
 
             "motes_eui64":                                 []
         }

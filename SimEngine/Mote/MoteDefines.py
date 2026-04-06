@@ -1,6 +1,9 @@
 # coding: utf-8
 
 # === admin
+import random
+
+
 NUM_SUFFICIENT_TX                           = 10      # sufficient num. of tx to estimate pdr by ACK
 WAITING_FOR_TX                              = u'waiting_for_tx'
 WAITING_FOR_RX                              = u'waiting_for_rx'
@@ -90,10 +93,10 @@ MSF_MIN_NUM_TX                              = 100  # min number for PDR to be si
 TSCH_MIN_BACKOFF_EXPONENT                   = 1
 TSCH_MAX_BACKOFF_EXPONENT                   = 7
 # https://gist.github.com/twatteyne/2e22ee3c1a802b685695#file-4e_tsch_default_ch-py
-TSCH_HOPPING_SEQUENCE                       = [16, 17, 23, 18, 26, 15, 25, 22, 19, 11, 12, 13, 24, 14, 20, 21]
+TSCH_HOPPING_SEQUENCE                       = [_ for _ in range(0, 80)]
 TSCH_MAX_EB_DELAY                           = 180
 TSCH_NUM_NEIGHBORS_TO_WAIT                  = 2
-TSCH_DESYNCHRONIZED_TIMEOUT_SLOTS           = 1750
+TSCH_DESYNCHRONIZED_TIMEOUT_SECONDS          = 35
 CELLOPTION_TX                               = u'TX'
 CELLOPTION_RX                               = u'RX'
 CELLOPTION_SHARED                           = u'SHARED'
@@ -128,3 +131,47 @@ CHARGE_RxDataTxAck_uC                       = 32.6
 CHARGE_RxData_uC                            = 22.6
 # Time slot during which the node’s radio stays off
 CHARGE_Sleep_uC                             = 0.0
+
+# === battery
+# the energy consumption of SparkLink Listening for a millisecond
+SPARKLINK_CHARGE_Listening_uC_per_ms                  = 7.5
+# the energy consumption of SparkLink Transmitting for a millisecond
+SPARKLINK_CHARGE_Transmitting_uC_per_ms               = 8.9
+# the energy consumption of SparkLink Idle for a millisecond
+SPARKLINK_CHARGE_DeepSleep_uC_per_ms                  = 0.0
+# the energy consumption of SparkLink Computing for a millisecond
+SPARKLINK_CHARGE_Computing_uC_per_ms                  = 4.5
+# none
+SPARKLINK_CHARGE_Base_IdleListen_uC                        = SPARKLINK_CHARGE_Listening_uC_per_ms * 1
+# TxDataRxAck: A timeslot during which the node sends some data frame,
+# and expects an acknowledgment (ACK)
+SPARKLINK_CHARGE_Base_TxDataRxAck_uC                       = SPARKLINK_CHARGE_Transmitting_uC_per_ms * (1.2) + SPARKLINK_CHARGE_Listening_uC_per_ms * (0.5)
+# TxData: Similar to TxDataRxAck, but no ACK is expected. This is
+# typically used when the data packet is broadcast
+SPARKLINK_CHARGE_Base_TxData_uC                            = SPARKLINK_CHARGE_Transmitting_uC_per_ms * (1.2)
+# RxDataTxAck: A timeslot during which the node receives some data
+# frame, and sends back an ACK to indicate successful reception
+SPARKLINK_CHARGE_Base_RxDataTxAck_uC                       = SPARKLINK_CHARGE_Listening_uC_per_ms * (1) + SPARKLINK_CHARGE_Transmitting_uC_per_ms * (0.24)
+# RxData: Similar to the RxDataTxAck but no ACK is sent (for a
+# broadcast packet)
+SPARKLINK_CHARGE_Base_RxData_uC                            = SPARKLINK_CHARGE_Listening_uC_per_ms * (1)
+# Time slot during which the node’s radio stays off
+SPARKLINK_CHARGE_Base_Sleep_uC                             = 0.0
+# scaling factor for 1M GFSK
+SPARKLINK_CHARGE_ScalingFactor_1M_GFSK                     = 1.0
+# scaling factor for 1M QPSK
+SPARKLINK_CHARGE_ScalingFactor_1M_QPSK                     = 0.82
+# scaling factor for 1M 8PSK
+SPARKLINK_CHARGE_ScalingFactor_1M_8PSK                     = 0.7
+# scaling factor for 2M GFSK
+SPARKLINK_CHARGE_ScalingFactor_2M_GFSK                     = 0.82
+# scaling factor for 2M QPSK
+SPARKLINK_CHARGE_ScalingFactor_2M_QPSK                     = 0.54
+# scaling factor for 2M 8PSK
+SPARKLINK_CHARGE_ScalingFactor_2M_8PSK                     = 0.49
+# scaling factor for 4M GFSK
+SPARKLINK_CHARGE_ScalingFactor_4M_GFSK                     = 0.54
+# scaling factor for 4M QPSK
+SPARKLINK_CHARGE_ScalingFactor_4M_QPSK                     = 0.47
+# scaling factor for 4M 8PSK
+SPARKLINK_CHARGE_ScalingFactor_4M_8PSK                     = 0.45

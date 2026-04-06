@@ -12,10 +12,10 @@ Thumbs.db
 /bin/simData/
 /gui/simData/
 /gui/backend/var/
+/venv
 
 # pycharm
 .idea/
 .cache/
 /test-reports
 .pytest_cache
-/venv*
