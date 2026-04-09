@@ -253,7 +253,7 @@ class SchedulingFunctionMSF(SchedulingFunctionBase):
             if (
                 received_packet is None
                 or
-                received_packet[u'mac'][u'srcMac'] == preferred_parent
+                (hasattr(received_packet, u'mac') and received_packet[u'mac'][u'srcMac'] == preferred_parent)
                 ):
                 if not self.get_negotiated_rx_cells(preferred_parent):
                     self._handle_rx_cell_elapsed_event(bool(received_packet))
@@ -261,7 +261,7 @@ class SchedulingFunctionMSF(SchedulingFunctionBase):
                     # ignore this notification
                     pass
             elif (
-                self.get_negotiated_rx_cells(received_packet[u'mac'][u'srcMac'])
+                hasattr(received_packet, u'mac') and self.get_negotiated_rx_cells(received_packet[u'mac'][u'srcMac'])
                 ):
                 self._handle_rx_cell_elapsed_event(False)
                 assert cell.options == [d.CELLOPTION_RX]

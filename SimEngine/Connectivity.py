@@ -1046,10 +1046,7 @@ class PisterHackModel(object):
 
 
 class ConnectivityMatrixMultiPHY(ConnectivityMatrixBase):
-    """Random (topology) connectivity using different physical layer model
-
-    inherit from ConnectivityMatrixRandom
-
+    """connectivity using different physical layer model
     """
 
     def _additional_initialization(self):
@@ -1057,26 +1054,41 @@ class ConnectivityMatrixMultiPHY(ConnectivityMatrixBase):
         self.coordinates = {}  # (x, y) indexed by mote_id
 
         # Use the sparklinkPHY to compute slot duration based on the PHY configuration
-        self.sparklinkPHY = SparklinkLowEnergyModel(self.engine, "1M_GFSK")
+        self.sparklinkPHY = SparklinkLowEnergyModel(self.engine)
         self.num_channels = self.sparklinkPHY.get_numChans()
-        # ConnectivityRandom doesn't need the connectivity matrix. Instead, it
-        # initializes coordinates of the motes. Its algorithm is:
-        #
-        # step.1 if moteid is 0
-        #   step.1-1 set (0, 0) to its coordinate
-        # step.2 otherwise
-        #   step.2-1 set its (tentative) coordinate randomly
-        #   step.2-2 count the number of neighbors with sufficient PDR (N)
-        #   step.2-3 if the number of deployed motes are smaller than
-        #          STABLE_NEIGHBORS
-        #     step.2-3-1 if N is equal to the number of deployed motes, fix the
-        #                coordinate of the mote
-        #     step.2-3-2 otherwise, go back to step.2-1
-        #   step.2-4 otherwise,
-        #     step.2-4 if N is equal to or larger than STABLE_NEIGHBORS, fix
-        #                the coordinate of the mote
-        #     step.2-5 otherwise, go back to step.2-1
-
+        
+        # Get deployment type from settings (default to 'random' for backward compatibility)
+        deployment_type = getattr(self.settings, 'conn_deployment_type', 'random')
+        
+        # Deploy motes based on deployment type
+        if deployment_type == 'random':
+            self._deploy_random()
+        elif deployment_type == 'linear':
+            self._deploy_linear()
+        elif deployment_type == 'fully_meshed':
+            self._deploy_fully_meshed()
+        else:
+            raise ValueError(f"Unknown deployment type: {deployment_type}. Supported types: 'random', 'linear', 'fully_meshed'")
+    
+    def _deploy_random(self):
+        """Deploy motes randomly using the sparklinkPHY model
+        
+        Algorithm:
+        step.1 if moteid is 0
+          step.1-1 set (0, 0) to its coordinate
+        step.2 otherwise
+          step.2-1 set its (tentative) coordinate randomly
+          step.2-2 count the number of neighbors with sufficient PDR (N)
+          step.2-3 if the number of deployed motes are smaller than
+                 STABLE_NEIGHBORS
+            step.2-3-1 if N is equal to the number of deployed motes, fix the
+                       coordinate of the mote
+            step.2-3-2 otherwise, go back to step.2-1
+          step.2-4 otherwise,
+            step.2-4 if N is equal to or larger than STABLE_NEIGHBORS, fix
+                       the coordinate of the mote
+            step.2-5 otherwise, go back to step.2-1
+        """
         # for quick access
         square_side = self.settings.conn_random_square_side
         init_min_pdr = self.settings.conn_random_init_min_pdr
@@ -1116,7 +1128,7 @@ class ConnectivityMatrixMultiPHY(ConnectivityMatrixBase):
                     rssi = self.sparklinkPHY.compute_rssi(src, dst)
                     pdr = self.sparklinkPHY.compute_pdr(src, dst)
                     # memorize the rssi and pdr values at the base channel
-                    
+
                     self.set_pdr_both_directions(
                         target_mote_id, deployed_mote_id, base_channel, pdr
                     )
@@ -1165,6 +1177,139 @@ class ConnectivityMatrixMultiPHY(ConnectivityMatrixBase):
                         self._clear_pdr(target_mote_id, deployed_mote_id, base_channel)
                     # try another random coordinate
                     continue
+    
+    def _deploy_linear(self):
+        """Deploy motes in a linear topology
+
+        Motes are placed in a straight line with equal spacing.
+        The spacing is automatically calculated based on the target PDR
+        between adjacent nodes using the sparklinkPHY.compute_pdr method.
+        """
+        # for quick access
+        target_pdr = getattr(self.settings, 'conn_linear_target_pdr', 0.9)  # Default target PDR: 0.9
+
+        # Calculate spacing using binary search with compute_pdr
+        # This works for any PHY model, not just specific formula
+        spacing = self._calculate_spacing_for_pdr(target_pdr)
+
+        # Place motes in a line along the x-axis
+        for target_mote_id in self.mote_id_list:
+            # Calculate position - place motes in a line
+            coordinate = (target_mote_id * spacing, 0.0)
+            self.coordinates[target_mote_id] = coordinate
+
+            # Calculate connectivity with all previously deployed motes
+            for deployed_mote_id in list(self.coordinates.keys()):
+                if deployed_mote_id == target_mote_id:
+                    continue
+
+                src, dst = {
+                        "mote": self._get_mote(target_mote_id),
+                        "coordinate": coordinate,
+                    }, {
+                        "mote": self._get_mote(deployed_mote_id),
+                        "coordinate": self.coordinates[deployed_mote_id],
+                    }
+
+                rssi = self.sparklinkPHY.compute_rssi(src, dst)
+                pdr = self.sparklinkPHY.compute_pdr(src, dst)
+
+                # set the rssi and pdr values to all channels
+                for channel in d.TSCH_HOPPING_SEQUENCE[: self.num_channels]:
+                    self.set_pdr_both_directions(
+                        target_mote_id, deployed_mote_id, channel, pdr
+                    )
+                    self.set_rssi_both_directions(
+                        target_mote_id, deployed_mote_id, channel, rssi
+                    )
+    
+    def _calculate_spacing_for_pdr(self, target_pdr, tolerance=0.01):
+        """Calculate spacing that achieves target PDR using binary search
+        
+        Uses the sparklinkPHY.compute_pdr method to find the distance that
+        gives the desired PDR. This works for any PHY model.
+        
+        Args:
+            target_pdr: Target PDR value (e.g., 0.9)
+            tolerance: Acceptable error margin for PDR (default 0.01)
+        
+        Returns:
+            spacing: Distance in km that achieves target_pdr
+        """
+        # Get max distance from the PHY model's PDR_data
+        bandwidth = self.sparklinkPHY.get_bandwidth()
+        modulation = self.sparklinkPHY.get_modulation()
+        
+        # Get max distance from PDR_data for current PHY configuration
+        if (bandwidth in self.sparklinkPHY.PDR_data and 
+            modulation in self.sparklinkPHY.PDR_data[bandwidth]):
+            distance_list = self.sparklinkPHY.PDR_data[bandwidth][modulation]["distance"]
+            max_distance = max(distance_list)
+        else:
+            # Fallback to 5.0 km if not found
+            assert False, f"PHY configuration not found in PDR_data: bandwidth={bandwidth}, modulation={modulation}"
+        
+        # Binary search for the right distance
+        low = 0.0
+        high = max_distance
+        
+        # Binary search
+        while high - low > 0.1:  # 1 meter precision
+            mid = (low + high) / 2
+            pdr = self.sparklinkPHY.compute_pdr(
+                {"mote": None, "coordinate": (0.0, 0.0)},
+                {"mote": None, "coordinate": (mid, 0.0)}
+            )
+            
+            if pdr > target_pdr:
+                # PDR too high, need more distance
+                low = mid
+            else:
+                # PDR too low, need less distance
+                high = mid
+        
+        spacing = (low + high) / 2
+
+        # Ensure minimum spacing of 10 meters
+        return max(0, spacing)
+    
+    def _deploy_fully_meshed(self):
+        """Deploy motes in a fully meshed topology
+
+        All motes are placed at the same location (0, 0) to ensure
+        maximum connectivity between all pairs.
+        """
+
+        # Place all motes at the same location for full mesh
+        for target_mote_id in self.mote_id_list:
+            coordinate = (0.0, 0.0)
+            self.coordinates[target_mote_id] = coordinate
+
+            # Set connectivity with all previously deployed motes
+            for deployed_mote_id in list(self.coordinates.keys()):
+                if deployed_mote_id == target_mote_id:
+                    continue
+
+                src, dst = {
+                        "mote": self._get_mote(target_mote_id),
+                        "coordinate": coordinate,
+                    }, {
+                        "mote": self._get_mote(deployed_mote_id),
+                        "coordinate": self.coordinates[deployed_mote_id],
+                    }
+
+                # Use sparklinkPHY to compute real PDR and RSSI at zero distance
+                rssi = self.sparklinkPHY.compute_rssi(src, dst)
+                pdr = self.sparklinkPHY.compute_pdr(src, dst)
+
+                # set the rssi and pdr values to all channels
+                for channel in d.TSCH_HOPPING_SEQUENCE[: self.num_channels]:
+                    self.set_pdr_both_directions(
+                        target_mote_id, deployed_mote_id, channel, pdr
+                    )
+                    self.set_rssi_both_directions(
+                        target_mote_id, deployed_mote_id, channel, rssi
+                    )
 
     def _get_mote(self, mote_id):
         # there must be a mote having mote_id. otherwise, the following line
@@ -1438,7 +1583,7 @@ class SparklinkLowEnergyModel(object):
         },
     }
 
-    def __init__(self, sim_engine, phy_mode=None):
+    def __init__(self, sim_engine):
         """
         Initialize the SparkLink Low Energy PHY model.
 
@@ -1541,23 +1686,92 @@ class SparklinkLowEnergyModel(object):
     def rssi_func(x, n, A):
         # 使用 x+1 避免 0 距离点的对数问题，A 为参考距离的强度
         return A - 10 * n * np.log10(x + 1)
+        
 
+    # 1. 定义 PDR 物理拟合函数 (Sigmoid)
+    @staticmethod
+    def pdr_func(x, k, x0):
+        return 1 / (1 + np.exp(k * (x - x0)))
+
+    # 2. 定义 RSSI 物理拟合函数 (Logarithmic)
+    @staticmethod
+    def rssi_func(x, n, A):
+        # 使用 x+1 避免 0 距离点的对数问题，A 为参考距离的强度
+        return A - 10 * n * np.log10(x + 1)
+
+    # 3. 定义 PDR 物理拟合函数 (Sigmoid)，强制经过第一个点
+    @staticmethod
+    def pdr_func_constrained(x, k, x_first, y_first):
+        """
+        Sigmoid function constrained to pass through (x_first, y_first)
+        pdr = 1 / (1 + exp(k * (x - x0)))
+        Given first point, we can solve for x0 in terms of k
+        """
+        # For a sigmoid y = 1 / (1 + exp(k*(x - x0)))
+        # We have: ln(1/y_first - 1) = k * (x_first - x0)  =>  x0 = x_first - ln(1/y_first - 1) / k
+        
+        # Ensure y_first is in valid range
+        if y_first <= 0 or y_first >= 1:
+            y_first = 0.999 if y_first >= 1 else 0.001
+        
+        logit_first = np.log(1.0 / y_first - 1.0)
+        x0 = x_first - logit_first / k
+        
+        return 1.0 / (1.0 + np.exp(k * (x - x0)))
+
+    # 4. 定义 RSSI 物理拟合函数 (Logarithmic)，强制经过第一个点
+    @staticmethod
+    def rssi_func_constrained(x, n, x_first, y_first):
+        """
+        Logarithmic function constrained to pass through (x_first, y_first)
+        rssi = A - 10 * n * log10(x + 1)
+        Given first point, we can solve for A in terms of n
+        """
+        # From first point: A = y_first + 10 * n * log10(x_first + 1)
+        A = y_first + 10 * n * np.log10(x_first + 1)
+        
+        return A - 10 * n * np.log10(x + 1)
 
     def polyfit_PDR(self):
         bandwidth = self.get_bandwidth()
         modulation = self.get_modulation()
         if bandwidth in self.PDR_data and modulation in self.PDR_data[bandwidth]:
             distance_data = self.PDR_data[bandwidth][modulation]["distance"]
-            pdr_data = self.PDR_data[bandwidth][modulation]["PDR"]
+            if np.mean(self.PDR_data[bandwidth][modulation]["PDR"]) > 1.0 and np.mean(self.PDR_data[bandwidth][modulation]["PDR"]) <= 1000.0:
+                pdr_data = np.array(self.PDR_data[bandwidth][modulation]["PDR"], dtype=float) / 1000.0  # 转换为 0-1 范围
+            else:
+                pdr_data = np.array(self.PDR_data[bandwidth][modulation]["PDR"], dtype=float)
             x = np.array(distance_data, dtype=float)
             y = np.array(pdr_data, dtype=float)
-            
             # 确保包含 (0, 1)
             if 0.0 not in x:
-                x = np.insert(x, 0, 0.0); y = np.insert(y, 0, 1.0)
+                x = np.insert(x, 0, 0.0); y = np.insert(y, 0, 0.9999)
             
-            self.PDR_model_parameters, _ = curve_fit(self.pdr_func, x, y, p0=[0.5, np.median(x)])
+            # Get first point for constraint
+            x_first, y_first = x[0], y[0]
+            
+            # Fit only for k parameter, with constraint
+            from scipy.optimize import minimize
+            
+            def objective(k):
+                k_val = k[0]
+                if k_val <= 0:
+                    return 1e10
+                y_pred = self.pdr_func_constrained(x, k_val, x_first, y_first)
+                return np.sum((y - y_pred) ** 2)
+            
+            result = minimize(objective, x0=[0.5], method='Nelder-Mead')
+            k_opt = result.x[0]
+            
+            # Calculate x0 based on k and constraint
+            logit_first = np.log(1.0 / y_first - 1.0)
+            x0_opt = x_first - logit_first / k_opt
+            
+            self.PDR_model_parameters = (k_opt, x0_opt)
         assert self.PDR_model_parameters is not None, "PDR curve fitting failed for bandwidth {} and modulation {}".format(bandwidth, modulation)
+
+        # 绘制 PDR 拟合结果与原始数据对比
+        # self._plot_pdr_fitting(x, y)
 
     def polyfit_RSSI(self):
         bandwidth = self.get_bandwidth()
@@ -1571,9 +1785,118 @@ class SparklinkLowEnergyModel(object):
             # 确保包含 (0, A)
             if 0.0 not in x:
                 x = np.insert(x, 0, 0.0); y = np.insert(y, 0, -40.0)
-
-            self.RSSI_model_parameters, _ = curve_fit(self.rssi_func, x, y, p0=[2.0, -40.0])
+            
+            # Get first point for constraint
+            x_first, y_first = x[0], y[0]
+            
+            # Fit only for n parameter, with constraint
+            from scipy.optimize import minimize
+            
+            def objective(n):
+                n_val = n[0]
+                if n_val <= 0:
+                    return 1e10
+                y_pred = self.rssi_func_constrained(x, n_val, x_first, y_first)
+                return np.sum((y - y_pred) ** 2)
+            
+            result = minimize(objective, x0=[2.0], method='Nelder-Mead')
+            n_opt = result.x[0]
+            
+            # Calculate A based on n and constraint
+            A_opt = y_first + 10 * n_opt * np.log10(x_first + 1)
+            
+            self.RSSI_model_parameters = (n_opt, A_opt)
         assert self.RSSI_model_parameters is not None, "RSSI curve fitting failed for bandwidth {} and modulation {}".format(bandwidth, modulation)
+
+        # 绘制 RSSI 拟合结果与原始数据对比
+        # self._plot_rssi_fitting(x, y)
+
+    # def polyfit_RSSI(self):
+    #     bandwidth = self.get_bandwidth()
+    #     modulation = self.get_modulation()
+    #     if bandwidth in self.RSSI_data and modulation in self.RSSI_data[bandwidth]:
+    #         distance_data = self.RSSI_data[bandwidth][modulation]["distance"]
+    #         rssi_data = self.RSSI_data[bandwidth][modulation]["RSSI"]
+    #         x = np.array(distance_data, dtype=float)
+    #         y = np.array(rssi_data, dtype=float)
+
+    #         # 确保包含 (0, A)
+    #         if 0.0 not in x:
+    #             x = np.insert(x, 0, 0.0); y = np.insert(y, 0, -40.0)
+
+    #         self.RSSI_model_parameters, _ = curve_fit(self.rssi_func, x, y, p0=[2.0, -40.0])
+    #     assert self.RSSI_model_parameters is not None, "RSSI curve fitting failed for bandwidth {} and modulation {}".format(bandwidth, modulation)
+        
+    #     # 绘制 RSSI 拟合结果与原始数据对比
+    #     self._plot_rssi_fitting(x, y)
+    
+
+    # def polyfit_PDR(self):
+    #     bandwidth = self.get_bandwidth()
+    #     modulation = self.get_modulation()
+    #     if bandwidth in self.PDR_data and modulation in self.PDR_data[bandwidth]:
+    #         distance_data = self.PDR_data[bandwidth][modulation]["distance"]
+    #         if np.mean(self.PDR_data[bandwidth][modulation]["PDR"]) > 1.0 and np.mean(self.PDR_data[bandwidth][modulation]["PDR"]) <= 1000.0:
+    #             pdr_data = np.array(self.PDR_data[bandwidth][modulation]["PDR"], dtype=float) / 1000.0  # 转换为 0-1 范围
+    #         else:
+    #             pdr_data = np.array(self.PDR_data[bandwidth][modulation]["PDR"], dtype=float)
+    #         x = np.array(distance_data, dtype=float)
+    #         y = np.array(pdr_data, dtype=float)
+    #         # 确保包含 (0, 1)
+    #         if 0.0 not in x:
+    #             x = np.insert(x, 0, 0.0); y = np.insert(y, 0, 1.0)
+            
+    #         self.PDR_model_parameters, _ = curve_fit(self.pdr_func, x, y, p0=[0.1, np.median(x)])
+    #     assert self.PDR_model_parameters is not None, "PDR curve fitting failed for bandwidth {} and modulation {}".format(bandwidth, modulation)
+        
+    #     # 绘制 PDR 拟合结果与原始数据对比
+    #     self._plot_pdr_fitting(x, y)
+        
+    def _plot_pdr_fitting(self, x_data, y_data):
+        """绘制 PDR 拟合曲线与原始数据对比"""
+        import matplotlib.pyplot as plt
+        
+        # 绘制原始数据点
+        plt.figure(figsize=(8, 6))
+        plt.scatter(x_data, y_data, color='red', label='Original Data', zorder=5, s=100)
+        
+        # 绘制拟合曲线
+        k, x0 = self.PDR_model_parameters
+        x_fit = np.linspace(0, max(x_data) * 1.1, 500)
+        y_fit = self.pdr_func(x_fit, k, x0)
+        plt.plot(x_fit, y_fit, 'b-', linewidth=2, label=f'Fitted Curve (k={k:.4f}, x0={x0:.4f})')
+        
+        plt.xlabel('Distance (m)', fontsize=12)
+        plt.ylabel('PDR', fontsize=12)
+        plt.title(f'PDR vs Distance ({self.get_bandwidth()} {self.get_modulation()})', fontsize=14)
+        plt.legend(fontsize=10)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        plt.show()
+    
+    def _plot_rssi_fitting(self, x_data, y_data):
+        """绘制 RSSI 拟合曲线与原始数据对比"""
+        import matplotlib.pyplot as plt
+        
+        # 绘制原始数据点
+        plt.figure(figsize=(8, 6))
+        plt.scatter(x_data, y_data, color='red', label='Original Data', zorder=5, s=100)
+        
+        # 绘制拟合曲线
+        n, A = self.RSSI_model_parameters
+        x_fit = np.linspace(0, max(x_data) * 1.1, 500)
+        y_fit = self.rssi_func(x_fit, n, A)
+        plt.plot(x_fit, y_fit, 'b-', linewidth=2, label=f'Fitted Curve (n={n:.4f}, A={A:.4f})')
+        
+        plt.xlabel('Distance (m)', fontsize=12)
+        plt.ylabel('RSSI (dBm)', fontsize=12)
+        plt.title(f'RSSI vs Distance ({self.get_bandwidth()} {self.get_modulation()})', fontsize=14)
+        plt.legend(fontsize=10)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        plt.show()
 
     def compute_rssi(self, src, dst):
         assert sorted(src.keys()) == sorted(["mote", "coordinate"])
@@ -1594,7 +1917,6 @@ class SparklinkLowEnergyModel(object):
 
         # 计算距离
         distance = self._get_distance_in_meters(src["coordinate"], dst["coordinate"])
-
         # 使用拟合的 PDR 模型计算 PDR
         k, x0 = self.PDR_model_parameters
         pdr = self.pdr_func(distance, k, x0)
