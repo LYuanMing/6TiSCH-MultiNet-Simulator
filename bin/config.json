@@ -7,7 +7,7 @@
     "settings": {
         "combination": {
             "exec_numMotes": [
-                10
+                5
             ]
         },
         "regular": {
@@ -41,11 +41,11 @@
             "tsch_max_tx_retries": 5,
             "radio_stats_log_period_s": 60,
             "conn_class": "MultiPHY",
-            "conn_phy_mode": "1M_QPSK",
-            "conn_deployment_type": "linear",
+            "conn_phy_mode": "1M_GFSK",
+            "conn_deployment_type": "full_coverage",
             "conn_simulate_ack_drop": false,
             "conn_trace": null,
-            "conn_random_square_side": 100.0,
+            "conn_random_square_side": 25.0,
             "conn_random_init_min_pdr": 0.5,
             "conn_random_init_min_neighbors": 3,
             "motes_eui64": []

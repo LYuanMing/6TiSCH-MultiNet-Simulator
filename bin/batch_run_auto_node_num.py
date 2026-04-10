@@ -7,24 +7,11 @@ import glob
 # 配置参数
 CONFIG_FILE = 'config.json'
 CONFIG_LIST = {
-    # "linear":{
-    #     "exec_numMotes": [10],
-    #     "conn_phy_mode": ["1M_GFSK", "1M_QPSK", "1M_8PSK", "2M_GFSK", "2M_QPSK", "2M_8PSK", "4M_GFSK", "4M_QPSK", "4M_8PSK"],
-    #     "cycle_start": 0,
-    #     "cycle_end": 10
-    # },
-    "fully_meshed":{
-        "exec_numMotes": [10, 50, 100],
+    "full_coverage":{
         "conn_phy_mode": ["1M_GFSK", "1M_QPSK", "1M_8PSK", "2M_GFSK", "2M_QPSK", "2M_8PSK", "4M_GFSK", "4M_QPSK", "4M_8PSK"],
         "cycle_start": 0,
-        "cycle_end": 10 
-    },
-    # "random":{
-    #     "exec_numMotes": [10, 50, 100, 300],
-    #     "conn_phy_mode": ["1M_GFSK", "1M_QPSK", "1M_8PSK", "2M_GFSK", "2M_QPSK", "2M_8PSK", "4M_GFSK", "4M_QPSK", "4M_8PSK"],
-    #     "cycle_start": 0,
-    #     "cycle_end": 10
-    # }
+        "cycle_end": 10
+    }
 }
 COMMAND = ['python', 'runSim.py']
 DATA_DIR = 'simData'  # 数据保存目录
@@ -46,26 +33,50 @@ def update_and_run():
         print(f"错误: 找不到 {CONFIG_FILE}")
         return
 
-    for topology in ['fully_meshed']:
+    for topology in ['full_coverage']:
         for phy_mode in CONFIG_LIST[topology]['conn_phy_mode']:
-            for exec_numMotes in CONFIG_LIST[topology]['exec_numMotes']:
-                
-                # --- 2. 修改配置 ---
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                
-                data['settings']['combination']['exec_numMotes'] = [exec_numMotes]
-                data['settings']['regular']['conn_phy_mode'] = phy_mode
-                data['settings']['regular']['conn_deployment_type'] = topology
-                
-                with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4)
-                
-                print(f"配置文件已更新，准备开始模拟...")
+            init = True
+            modified = False
+            # --- 2. 修改配置 ---
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            data['settings']['combination']['exec_numMotes'] = [3]
+            data['settings']['regular']['conn_phy_mode'] = phy_mode
+            data['settings']['regular']['conn_deployment_type'] = topology
+            
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4)
 
+            while init:
+                
+                if not modified:
+                    
+                    print(f"配置文件已更新，准备开始模拟...")
+                    try:
+                        subprocess.run(COMMAND, check=True, capture_output=True, text=True)
+                    except subprocess.CalledProcessError as e:
+                        error_output = e.stderr
+                        match = re.search(r"total_nodes_needed:\s*(\d+)", error_output)
+                        if match:
+                            nodes_needed = match.group(1)
+                            nodes_count = int(nodes_needed)
+                            data['settings']['combination']['exec_numMotes'] = [nodes_count]
+                            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                                json.dump(data, f, indent=4)
+                            modified = True
+                        else:
+                            print(f"未提取到nodes_needed信息")
+                            quit()
+                        continue
+                    except KeyboardInterrupt:
+                        print("\n检测到用户中断。下次运行将从当前进度继续。")
+                        quit() 
+                
+                init = False
                 for cycle in range(CONFIG_LIST[topology]['cycle_start'], CONFIG_LIST[topology]['cycle_end']):
-                    print(f"\n检查任务: topology={topology}, phy_mode={phy_mode}, motes={exec_numMotes}, cycle={cycle+1}/{CONFIG_LIST[topology]['cycle_end']-CONFIG_LIST[topology]['cycle_start']}")
-                    file_name_pattern = f"./{DATA_DIR}/{topology}/{phy_mode}/{exec_numMotes}/{cycle}"
+                    print(f"\n检查任务: topology={topology}, phy_mode={phy_mode}, cycle={cycle+1}/{CONFIG_LIST[topology]['cycle_end']-CONFIG_LIST[topology]['cycle_start']}")
+                    file_name_pattern = f"./{DATA_DIR}/{topology}/{phy_mode}/fixed_space/{cycle}"
                     # --- 1. 断点检测逻辑 ---
                     if is_already_done(file_name_pattern):
                         print(f"跳过: 检测到 {DATA_DIR} 中已存在 {file_name_pattern} 的结果文件。")
@@ -75,10 +86,10 @@ def update_and_run():
                     try:
                         # 使用 subprocess.run 会阻塞直到当前模拟完成
                         subprocess.run(COMMAND, check=True)
-                        print(f"成功完成模拟: topology={topology}, phy_mode={phy_mode}, motes={exec_numMotes}, cycle={cycle+1}")
+                        print(f"成功完成模拟: topology={topology}, phy_mode={phy_mode}, motes={exec_numMotes}, cycle={cycle+1}/5")
                     except subprocess.CalledProcessError as e:
-                        print(f"运行出错: topology={topology}, phy_mode={phy_mode}, motes={exec_numMotes}, cycle={cycle+1}。")
-                        continue
+                        print(f"错误: 模拟执行失败，错误信息: {e}")
+                        quit()
                     except KeyboardInterrupt:
                         print("\n检测到用户中断。下次运行将从当前进度继续。")
                         quit() 

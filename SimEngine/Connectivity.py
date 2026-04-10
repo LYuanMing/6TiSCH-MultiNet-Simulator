@@ -1067,6 +1067,8 @@ class ConnectivityMatrixMultiPHY(ConnectivityMatrixBase):
             self._deploy_linear()
         elif deployment_type == 'fully_meshed':
             self._deploy_fully_meshed()
+        elif deployment_type == 'full_coverage':
+            self._deploy_full_coverage()
         else:
             raise ValueError(f"Unknown deployment type: {deployment_type}. Supported types: 'random', 'linear', 'fully_meshed'")
     
@@ -1303,6 +1305,91 @@ class ConnectivityMatrixMultiPHY(ConnectivityMatrixBase):
                 pdr = self.sparklinkPHY.compute_pdr(src, dst)
 
                 # set the rssi and pdr values to all channels
+                for channel in d.TSCH_HOPPING_SEQUENCE[: self.num_channels]:
+                    self.set_pdr_both_directions(
+                        target_mote_id, deployed_mote_id, channel, pdr
+                    )
+                    self.set_rssi_both_directions(
+                        target_mote_id, deployed_mote_id, channel, rssi
+                    )
+
+    def _deploy_full_coverage(self):
+        """Deploy motes for full coverage testing
+        
+        Coverage requirements:
+        1. Connectivity Coverage: 100% of nodes must be able to reach Root via multi-hop
+        2. Reliability Coverage: PDR >= 90% anywhere in the region
+        
+        Strategy: Grid-based deployment
+        - Root node at center (0, 0)
+        - Deploy nodes in a grid pattern with spacing calculated to ensure PDR >= 90%
+        - Each node connects to its nearest parent (closer to root)
+        - Grid ensures full area coverage with reliability guarantee
+        """
+        # Get configuration from settings
+        square_side = self.settings.conn_random_square_side
+        target_pdr = getattr(self.settings, 'conn_full_coverage_target_pdr', 0.9)
+        
+        # Calculate spacing that achieves target PDR using binary search
+        # This ensures reliability coverage: any point within spacing/√2 of a node
+        # will have PDR >= target_pdr
+        spacing = self._calculate_spacing_for_pdr(target_pdr)
+        # Calculate grid dimensions
+        # Number of nodes per row/column needed to cover the square
+        nodes_per_side = int(math.ceil(square_side / spacing)) + 1
+        # Total nodes needed for full grid coverage
+        total_nodes_needed = nodes_per_side * nodes_per_side
+
+        total_nodes_needed += 1  # Add one for the root node at the center
+        
+        # Check if we have enough motes
+        available_motes = len(self.mote_id_list)
+        if available_motes != total_nodes_needed:
+            assert False, f"total_nodes_needed: {total_nodes_needed}"
+
+        # Only use the first total_nodes_needed motes
+        mote_ids_to_deploy = self.mote_id_list[:total_nodes_needed]
+
+        # Calculate offset to center the grid
+        # The grid should be centered around (0, 0)
+        grid_size = (nodes_per_side - 1) * spacing
+        offset = grid_size / 2.0
+
+        # Create grid positions sorted by distance from center (root first)
+        grid_positions = []
+        for i in range(nodes_per_side):
+            for j in range(nodes_per_side):
+                x = i * spacing - offset
+                y = j * spacing - offset
+                dist_from_center = math.sqrt(x**2 + y**2)
+                grid_positions.append((dist_from_center, (x, y)))
+
+        # Sort by distance from center to ensure root-first deployment
+        grid_positions.sort(key=lambda p: p[0])
+
+        # Deploy each mote in order (closest to center first)
+        for deploy_idx, (dist, (x, y)) in enumerate(grid_positions):
+            target_mote_id = mote_ids_to_deploy[deploy_idx]
+            coordinate = (x, y)
+            self.coordinates[target_mote_id] = coordinate
+
+            # Calculate PDR and RSSI with all previously deployed motes
+            for deployed_mote_id in list(self.coordinates.keys()):
+                if deployed_mote_id == target_mote_id:
+                    continue
+
+                src, dst = {
+                    "mote": self._get_mote(target_mote_id),
+                    "coordinate": coordinate,
+                }, {
+                    "mote": self._get_mote(deployed_mote_id),
+                    "coordinate": self.coordinates[deployed_mote_id],
+                }
+
+                rssi = self.sparklinkPHY.compute_rssi(src, dst)
+                pdr = self.sparklinkPHY.compute_pdr(src, dst)
+
+                # Set the rssi and pdr values to all channels
                 for channel in d.TSCH_HOPPING_SEQUENCE[: self.num_channels]:
                     self.set_pdr_both_directions(
                         target_mote_id, deployed_mote_id, channel, pdr
