@@ -18,6 +18,7 @@ import pytest
 from . import test_utils as u
 import SimEngine.Mote.MoteDefines as d
 from SimEngine import SimLog
+from SimEngine.SimEngineDefines import PROPOGATION_TIME_STEP
 from SimEngine.Connectivity import ConnectivityMatrixK7
 
 #============================ helpers =========================================
@@ -113,7 +114,7 @@ class TestConnectivity:
         TX_mote.radio.startTx(channel, packet)
 
         # run propagation to process the transmission
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
 
         # assert transmission queue is not empty after startTx
         assert len(sim_engine.connectivity.transmission_queue[channel]) == 1
@@ -157,7 +158,7 @@ class TestConnectivity:
         TX_mote.radio.startTx(channel, packet)
         
         # Run propagation to allow lockon to happen
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
 
         # Check that transmission is now in queue
         assert len(sim_engine.connectivity.transmission_queue[channel]) == 1
@@ -228,7 +229,7 @@ class TestConnectivity:
             }
         )
         # run propagation
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
         # the reception should relockon to the stronger transmission
         reception = list(connectivity.reception_queue[channel])[0]
         assert reception[u'locked_transmission'][u'mote'] is second_TX_mote
@@ -288,7 +289,7 @@ class TestConnectivity:
             }
         )
         # run propagation to allow lockon
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
         
         # Get the reception object
         reception = list(connectivity.reception_queue[channel])[0]
@@ -316,7 +317,7 @@ class TestConnectivity:
             }
         )
         # run propagation
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
 
         # The reception should still be locked to the original transmission
         # since the second transmission started outside the capture window
@@ -400,7 +401,7 @@ class TestConnectivity:
         # Run propagation for enough time to complete the transmission
         # Need to run until the transmission ends
         transmission_end_time = TX_mote.radio.onGoingTransmission[u'end_time']
-        u.run_until_(sim_engine, transmission_end_time + sim_engine.time_step)
+        u.run_until_(sim_engine, transmission_end_time + PROPOGATION_TIME_STEP)
 
         # Verify that both rxDone and txDone were called during propagation
         assert len(rxdone_called) == 1, "RX mote's rxDone method was not called"
@@ -496,7 +497,7 @@ class TestConnectivity:
         weak_TX_mote.radio.startTx(channel, weak_packet)
 
         # Run propagation to allow lockon to the weak transmission
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
 
         # At this point, the RX mote should have locked onto the weak transmission
         # Now start the strong interfering transmission which will cause collision
@@ -517,7 +518,7 @@ class TestConnectivity:
 
         # Run propagation for enough time to complete the transmissions
         weak_transmission_end_time = weak_TX_mote.radio.onGoingTransmission[u'end_time']
-        u.run_until_(sim_engine, weak_transmission_end_time + sim_engine.time_step)
+        u.run_until_(sim_engine, weak_transmission_end_time + PROPOGATION_TIME_STEP)
 
         # Verify that the reception was attempted (rxDone was called)
         assert len(rxdone_called_with) > 0, "RX mote's rxDone method was not called"
@@ -629,7 +630,7 @@ class TestConnectivity:
 
         # Run propagation for enough time to complete the transmissions
         weak_transmission_end_time = weak_TX_mote.radio.onGoingTransmission[u'end_time']
-        u.run_until_(sim_engine, weak_transmission_end_time + sim_engine.time_step)
+        u.run_until_(sim_engine, weak_transmission_end_time + PROPOGATION_TIME_STEP)
 
         # Verify that the reception was attempted (rxDone was called)
         assert len(rxdone_called_with) > 0, "RX mote's rxDone method was not called"
@@ -710,7 +711,7 @@ class TestConnectivity:
 
         # Run propagation once to add both transmission and reception to the queue
         # and allow the reception to lock onto the transmission
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
 
         # Verify that both transmission and reception were added to the queue
         assert len(sim_engine.connectivity.transmission_queue[channel]) == 1
@@ -722,7 +723,7 @@ class TestConnectivity:
 
         # Run propagation to process the transmission and reception until they complete
         transmission_end_time = TX_mote.radio.onGoingTransmission[u'end_time']
-        u.run_until_(sim_engine, transmission_end_time + sim_engine.time_step)
+        u.run_until_(sim_engine, transmission_end_time + PROPOGATION_TIME_STEP)
 
         # After propagation, both transmission and reception should be dequeued
         # because they have completed (their end_time has passed)
@@ -799,7 +800,7 @@ class TestConnectivity:
         TX_mote.radio.startTx(channel, packet)
         # Run propagation once to add both transmission and reception to the queue
         # and allow the reception to lock onto the transmission
-        u.run_until_(sim_engine, sim_engine.global_time + sim_engine.time_step)
+        u.run_until_(sim_engine, sim_engine.global_time + PROPOGATION_TIME_STEP)
 
         # Verify that both transmission and reception were added to the queue
         assert len(connectivity.transmission_queue[channel]) == 1
@@ -812,7 +813,7 @@ class TestConnectivity:
         transmission_end_time = TX_mote.radio.onGoingTransmission[u'end_time']
 
         # Run one more propagation cycle after the end time
-        u.run_until_(sim_engine, transmission_end_time + sim_engine.time_step)
+        u.run_until_(sim_engine, transmission_end_time + PROPOGATION_TIME_STEP)
 
         # After the end time, both transmission and reception should be dequeued
         assert len(connectivity.transmission_queue[channel]) == 0, \

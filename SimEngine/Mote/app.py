@@ -14,6 +14,7 @@ import random
 
 # Simulator-wide modules
 import SimEngine
+from SimEngine.SimEngineDefines import SECOND
 from . import MoteDefines as d
 
 # =========================== defines =========================================
@@ -200,12 +201,12 @@ class AppPeriodic(AppBase):
 
         if self.sending_first_packet:
             # compute initial time within the range of [next asn, next asn+pkPeriod]
-            delay = self.settings.tsch_slotDuration + (self.settings.app_pkPeriod * random.random())
+            delay = self.settings.tsch_slotDuration + (self.settings.app_pkPeriod * random.random()) * SECOND
             self.sending_first_packet = False
         else:
             # compute random delay
             assert self.settings.app_pkPeriodVar < 1
-            delay = self.settings.app_pkPeriod * (1 + random.uniform(-self.settings.app_pkPeriodVar, self.settings.app_pkPeriodVar))
+            delay = self.settings.app_pkPeriod * (1 + random.uniform(-self.settings.app_pkPeriodVar, self.settings.app_pkPeriodVar)) * SECOND
 
         # schedule
         self.engine.scheduleIn(

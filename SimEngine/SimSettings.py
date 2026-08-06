@@ -124,16 +124,7 @@ class SimSettings(object):
         # remove the "u" prefixed quotations.
         dirname = re.sub(r"u'(.*?)'", r"\1", dirname)
 
-        if not os.path.exists(dirname):
-            try:
-                os.makedirs(dirname)
-            except OSError as e:
-                if e.errno == os.errno.EEXIST:
-                    # FIXME: handle this race condition properly
-                    # Another core/CPU has already made this directory
-                    pass
-                else:
-                    raise
+        os.makedirs(dirname, exist_ok=True)
         # file
         if self.cpuID is None:
             tempname = 'output.dat'

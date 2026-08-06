@@ -100,13 +100,13 @@ class TestDiscreteEventEngine:
     def test_DEE_check_schedule_required(self):
         dee = DiscreteEventEngine()
         
-        assert not dee._check_schedule_required()
+        assert dee._no_event_to_be_processed(dee.global_time+dee.time_step)
 
         dee._push_event(event=Event(time=5, uniqueTag='event1', callback='data1', intraSlotOrder=INTRASLOTORDER_STARTSLOT, cancelled=False))
-        assert dee._check_schedule_required()
+        assert not dee._no_event_to_be_processed(dee.global_time+dee.time_step)
         
         dee._pop_event()
-        assert not dee._check_schedule_required()
+        assert dee._no_event_to_be_processed(dee.global_time+dee.time_step)
 
 
     def test_DEE_removeFutureEvent(self):
@@ -136,7 +136,7 @@ class TestDiscreteEventEngine:
 
     def test_DEE_run_basic(self):
         dee = DiscreteEventEngine()
-        dee._process_events = MagicMock(name="_process_events") # mock a fake _process_events function
+        dee._process_single_event = MagicMock(name="_process_single_event") # mock a fake function
 
         dee.scheduleAtPreciseTime(Event(
             time=dee.global_time + dee.time_step,
@@ -149,17 +149,16 @@ class TestDiscreteEventEngine:
         dee.start()
         dee.join(timeout=1) # 1 sec should be enough for execution
         assert not dee.is_alive()
-        dee._process_events.assert_called_once()
+        dee._process_single_event.assert_called_once()
 
     def test_DEE_pause_and_resume(self):
         dee = DiscreteEventEngine()
 
-        def real_process_events(event_list):
-            for event in event_list:
-                if event.callback:
-                    event.callback()
+        def real_process_single_event(event):
+            if event:
+                event.callback()
 
-        dee._process_events = MagicMock(name='_process_events', side_effect=real_process_events)
+        dee._process_single_event = MagicMock(name='_process_single_event', side_effect=real_process_single_event)
 
         # 1. pause the engine at global_time+2*time_step 
         pause_time = dee.global_time + 2 * dee.time_step
@@ -169,7 +168,7 @@ class TestDiscreteEventEngine:
         dee.scheduleAtPreciseTime(Event(
             time=pause_time + dee.time_step,
             uniqueTag=('test', 'late_event'),
-            callback=None,
+            callback=lambda :None,
             intraSlotOrder=INTRASLOTORDER_STARTSLOT
         ))
 
@@ -189,18 +188,16 @@ class TestDiscreteEventEngine:
         dee.join(timeout=1)
         assert dee.simPaused is False
         assert dee.is_alive() is False
-        # _process_events is called
-        assert dee._process_events.called
+        # _process_single_event is called
+        assert dee._process_single_event.called
 
     def test_terminateSimulation(self):
         dee = DiscreteEventEngine()
         
-        def real_process_events(event_list):
-            for event in event_list:
-                if event.callback:
-                    event.callback()
+        def real_process_single_event(event):
+            event.callback()
 
-        dee._process_events = MagicMock(name='_process_events', side_effect=real_process_events)
+        dee._process_single_event = MagicMock(name='_process_single_event', side_effect=real_process_single_event)
         assert DiscreteEventEngine._instances
         assert dee.goOn is True
 

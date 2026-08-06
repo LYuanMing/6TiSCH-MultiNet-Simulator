@@ -133,6 +133,10 @@ def read_log_file(filter=[], after_global_time=0):
         f.readline()
         for line in f:
             log = json.loads(line)
+            # skip config lines (they lack '_global_time') that may appear
+            # when log files are accidentally shared due to timestamp collisions
+            if '_global_time' not in log:
+                continue
             if (log["_global_time"] >= after_global_time) and ((len(filter) == 0) or (log['_type'] in filter)):
                 logs.append(log)
 

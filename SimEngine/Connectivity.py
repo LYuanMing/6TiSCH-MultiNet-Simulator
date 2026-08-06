@@ -33,7 +33,7 @@ import datetime as dt
 import json
 import itertools
 
-from SimEngine.SimEngineDefines import SECOND, Event
+from SimEngine.SimEngineDefines import SECOND, Event, PROPOGATION_TIME_STEP
 
 from . import SimSettings
 from . import SimLog
@@ -261,7 +261,7 @@ class Connectivity(object):
     def _schedule_multi_network_propagate(self):
         # schedule propagation every time step
         self.engine.scheduleAtPreciseTime(Event(
-            time            = self.engine.global_time + 1, # we only need to make sure schedule time is larger than current time
+            time            = self.engine.global_time + PROPOGATION_TIME_STEP, # we only need to make sure schedule time is larger than current time
             callback        = self.multi_network_propagate,
             uniqueTag       = (None, u'Connectivity.multi_network_propagate'),
             intraSlotOrder  = d.INTRASLOTORDER_PROPAGATE

@@ -9,3 +9,4 @@ watchdog
 gitpython
 psutil
 future
+pytest-xdist

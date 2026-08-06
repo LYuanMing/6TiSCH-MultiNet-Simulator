@@ -116,14 +116,19 @@ class DiscreteEventEngine(threading.Thread, metaclass=SingletonMeta):
                         # no more events to process
                         break
                     
-                    self.global_time += self.time_step
-                    
-                    if self._check_schedule_required():
+                    process_edge = self.global_time + self.time_step
+
+                    if self._no_event_to_be_processed(process_edge):
                         # next event is in the future
+                        self.global_time = process_edge
                         continue
-                    
-                    event_list = self._pop_event_until_(self.global_time)
-                    self._process_events(event_list)
+
+                    while self._heap_top() and self._heap_top().time <= process_edge:
+                        event = self._pop_event()
+                        if event is not None and not event.cancelled:
+                            self.global_time = event.time
+                            self._process_single_event(event)
+                    self.global_time = process_edge
         except Exception as e:
             # thread crashed
 
@@ -144,9 +149,6 @@ class DiscreteEventEngine(threading.Thread, metaclass=SingletonMeta):
             output += [u'==============================']
             output += [u'']
             output += [u'The current global time is {0}'.format(self.global_time)]
-            output += [u'The log file is {0}'.format(
-                self.settings.getOutputFile()
-            )]
             output += [u'']
             output += [u'==============================']
             output += [u'config.json to reproduce:']
@@ -157,7 +159,7 @@ class DiscreteEventEngine(threading.Thread, metaclass=SingletonMeta):
                 SimConfig.SimConfig.generate_config(
                     settings_dict = self.settings.__dict__,
                     random_seed   = self.random_seed
-                ),
+                ) if hasattr(self, "settings") else {},
                 indent = 4
             )
             output += u'\n\n==============================\n'
@@ -226,14 +228,14 @@ class DiscreteEventEngine(threading.Thread, metaclass=SingletonMeta):
                 events.append(event)
         return events
 
-    def _check_schedule_required(self):
+    def _no_event_to_be_processed(self, process_edge):
         """Check if scheduling is required (i.e., there are pending events)."""
         if not self.events:
-            return False
+            return True
         heap_top = self._heap_top()
         if not heap_top:
-            return False
-        return heap_top.time >= self.global_time
+            return True
+        return heap_top.time > process_edge
     
     def removeFutureEvent(self, uniqueTag):
 
@@ -319,7 +321,7 @@ class DiscreteEventEngine(threading.Thread, metaclass=SingletonMeta):
 
     # ======================== abstract =======================================
 
-    def _process_events(self, event_list):
+    def _process_single_event(self, event_list):
         raise NotImplementedError()
 
     def _init_additional_local_variables(self):
@@ -396,11 +398,12 @@ class MultiNetworkSimEngine(DiscreteEventEngine):
         self._add_network(network_id=self.default_network_id)
     # ======================== multi-net specific =======================================
 
-    def _process_events(self, event_list):
-        # For all events in the event_list, we first sort them by time and intraSlotOrder
-        event_list.sort(key=lambda e: (e.time, e.intraSlotOrder))
-        for event in event_list:
+    def _process_single_event(self, event):
+        assert event is not None
+        if event.callback:
             event.callback()
+        else:
+            raise Warning(f"{event.uniqueTag}'s callback is None")
 
     def _add_network(self, network_id:str = None):
         """add a new network instance to the engine"""

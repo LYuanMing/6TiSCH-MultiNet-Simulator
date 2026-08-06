@@ -7,7 +7,7 @@ SECOND = 1_000_000
 MILLISECOND = 1_000
 MICROSECOND = 1
 TIME_STEP = MICROSECOND * 100  # 100 microseconds
-
+PROPOGATION_TIME_STEP = MILLISECOND
 
 class EventView(NamedTuple):
     time: int

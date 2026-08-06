@@ -936,7 +936,7 @@ class Tsch(object):
 
             channel = random.choice(self.hopping_sequence)
             # start listening
-            self.mote.radio.startRx(channel, end_time = self.engine.global_time + (self.settings.tsch_slotDuration - self.engine.time_step))
+            self.mote.radio.startRx(channel, end_time = self.engine.global_time + self.settings.tsch_slotDuration - 100 * MICROSECOND)
             # indicate that we're waiting for the RX operation to finish
             self.waitingFor = d.WAITING_FOR_RX
 

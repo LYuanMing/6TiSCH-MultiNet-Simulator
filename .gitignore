@@ -22,3 +22,4 @@ Thumbs.db
 /test-reports
 .pytest_cache
 /venv*
+.codewhale

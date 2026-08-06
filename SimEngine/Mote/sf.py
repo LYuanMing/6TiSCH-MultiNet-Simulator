@@ -10,6 +10,7 @@ from abc import abstractmethod
 import netaddr
 
 import SimEngine
+from SimEngine.SimEngineDefines import SECOND
 from . import MoteDefines as d
 from . import sixp
 
@@ -664,7 +665,7 @@ class SchedulingFunctionMSF(SchedulingFunctionBase):
 
         # schedule next housekeeping
         self.engine.scheduleIn(
-            delay         = d.MSF_HOUSEKEEPINGCOLLISION_PERIOD,
+            delay         = d.MSF_HOUSEKEEPINGCOLLISION_PERIOD * SECOND,
             cb            = self._housekeeping_collision,
             uniqueTag     = (self.mote.id, u'_housekeeping_collision'),
             intraSlotOrder= d.INTRASLOTORDER_STACKTASKS,

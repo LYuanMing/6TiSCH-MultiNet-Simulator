@@ -1,7 +1,9 @@
 from __future__ import absolute_import
 from builtins import zip
+import os
 import pytest
 import time
+import uuid
 
 from SimEngine import SimConfig,   \
                       SimSettings, \
@@ -62,9 +64,11 @@ def sim_engine(request):
         # create sim settings
         sim_settings = SimSettings.SimSettings(**config)
         sim_settings.setLogDirectory(
-            '{0}-{1:03d}'.format(
+            '{0}-{1:03d}-pid{2}-{3}'.format(
                 time.strftime('%Y%m%d-%H%M%S'),
-                int(round(time.time() * 1000))%1000
+                int(round(time.time() * 1000))%1000,
+                os.getpid(),
+                uuid.uuid4().hex[:8]
             )
         )
         sim_settings.setCombinationKeys([])

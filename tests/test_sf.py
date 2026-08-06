@@ -16,6 +16,7 @@ import types
 import pytest
 
 from SimEngine.Mote.NetDefines import Packet
+from SimEngine.SimEngineDefines import SECOND
 
 from . import test_utils as u
 import SimEngine.Mote.MoteDefines as d
@@ -251,7 +252,7 @@ class TestMSF(object):
         mote.settings.app_pkPeriod = (
             mote.settings.tsch_slotframeLength *
             mote.settings.tsch_slotDuration
-        )
+        ) / SECOND
         mote.app.startSendingData()
         u.run_until_asn(
             sim_engine,
@@ -288,7 +289,7 @@ class TestMSF(object):
         mote.settings.app_pkPeriod = (
             old_div(mote.settings.tsch_slotframeLength, 3) *
             mote.settings.tsch_slotDuration
-        )
+        ) / SECOND
 
         # 3. test cell relocation
         # 3.1 increase the following Rpl values in order to avoid invalidating
